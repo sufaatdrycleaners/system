@@ -2204,6 +2204,7 @@ function authMsg(err){
   if(/network/.test(c)) return "No internet connection. Check it and try again.";
   if(/email-already-in-use/.test(c)) return "An account with this email already exists.";
   if(/weak-password/.test(c)) return "That password is too weak. Use at least 8 letters and numbers.";
+  if(/permission-denied/.test(c)) return "The system isn't ready for new accounts yet — the admin needs to publish the latest Firebase rules. Try again later.";
   if(/operation-not-allowed|admin-restricted/.test(c)) return "Creating accounts is switched off. Ask the admin.";
   return "Couldn't sign in ("+c.replace("auth/","")+").";
 }
