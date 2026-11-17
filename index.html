@@ -2,7 +2,16 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#173f31">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="SUFAAT">
+<meta name="format-detection" content="telephone=no">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="apple-touch-icon" href="apple-touch-icon.png">
+<link rel="icon" type="image/png" sizes="32x32" href="favicon-32.png">
 <title>SUFAAT Drycleaners — Staff Portal</title>
 <meta name="robots" content="noindex, nofollow">
 <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -324,6 +333,49 @@ body:not(.role-admin) [data-delorder], body:not(.role-admin) [data-delcust], bod
 .mitem .a{display:flex;justify-content:space-between;gap:8px;font-weight:600}
 .mitem .b{display:flex;justify-content:space-between;gap:8px;color:var(--muted);font-size:12.5px;margin-top:3px;align-items:center}
 #idle-warn{position:fixed;left:50%;bottom:22px;transform:translateX(-50%);z-index:9999;background:#7a1d1d;color:#fff;padding:12px 18px;border-radius:12px;box-shadow:0 8px 28px rgba(0,0,0,.35);font-size:14px;max-width:92vw;text-align:center}
+
+/* ---- all devices: phones, tablets, desktops ---- */
+html{-webkit-text-size-adjust:100%;text-size-adjust:100%}
+body{overflow-x:hidden;-webkit-tap-highlight-color:transparent}
+img,svg,canvas,video{max-width:100%}
+.app{min-height:100dvh}
+.side{height:100dvh;padding-top:max(18px,env(safe-area-inset-top));padding-bottom:max(18px,env(safe-area-inset-bottom))}
+@media (pointer:coarse){
+  /* 16px stops iPhone/iPad from zooming in when you tap a box */
+  input,select,textarea,.inp{font-size:16px !important}
+  .btn,.nav a,button{min-height:40px}
+  .btn.sm{min-height:34px}
+}
+@media (max-width:860px){
+  .mobile-bar{padding-top:max(10px,env(safe-area-inset-top));padding-left:max(14px,env(safe-area-inset-left));padding-right:max(14px,env(safe-area-inset-right))}
+  main{padding-left:max(12px,env(safe-area-inset-left));padding-right:max(12px,env(safe-area-inset-right));padding-bottom:calc(110px + env(safe-area-inset-bottom))}
+  .fab{bottom:calc(18px + env(safe-area-inset-bottom))}
+  .toast{bottom:calc(84px + env(safe-area-inset-bottom))}
+  #idle-warn{bottom:calc(84px + env(safe-area-inset-bottom))}
+  .ov{padding:0;align-items:stretch}
+  .md{border-radius:0;min-height:100dvh;width:100%;margin:0}
+  .md-h{border-radius:0;padding-top:max(14px,env(safe-area-inset-top))}
+  .md-f{border-radius:0;padding-bottom:max(12px,env(safe-area-inset-bottom))}
+  .md-f .btn{flex:1;justify-content:center}
+  .toolbar{flex-wrap:wrap}
+  .toolbar .inp,.search{width:100%;flex:1 1 100%}
+}
+@media (max-width:420px){
+  .kpis{gap:8px}
+  .kpi .v{font-size:17px}
+  .top h1{font-size:18px}
+  .tiles{grid-template-columns:repeat(2,1fr)}
+}
+@media (min-width:861px) and (max-width:1100px){
+  .app{grid-template-columns:200px 1fr}
+  main{padding:18px 18px 90px}
+}
+@media (min-width:1800px){ main{max-width:1600px} }
+.tabs button{white-space:nowrap}
+@media (max-width:860px){ .tabs{display:flex;flex-wrap:nowrap;overflow-x:auto;max-width:100%;scrollbar-width:none;-webkit-overflow-scrolling:touch} .tabs::-webkit-scrollbar{display:none} .tabs button{flex:0 0 auto} }
+@media (pointer:coarse){ .tabs button{min-height:36px} }
+/* landscape phones: keep the top bar short */
+@media (max-height:500px) and (max-width:1000px){ .mobile-bar img{height:30px} .mobile-bar{padding-top:6px;padding-bottom:6px} }
 </style>
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-auth-compat.js"></script>
@@ -880,7 +932,7 @@ function barChart(data, title){
 
 VIEWS.settings = () => {
   const st = S.settings; const ro = S.readOnly ? "disabled" : "";
-  return topbar("Settings", "Business details, prices and drivers", S.readOnly?"":`<button class="btn pri" data-act="save-settings">Save settings</button>`) +
+  return topbar("Settings", "Business details, prices and delivery", S.readOnly?"":`<button class="btn pri" data-act="save-settings">Save settings</button>`) +
   `<div class="two" id="settings-form">
     <div class="grid" style="align-content:start">
       <div class="card"><div class="card-h"><h2>Business</h2></div><div class="card-b fgrid">
