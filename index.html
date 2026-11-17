@@ -826,7 +826,7 @@ VIEWS.carpet = () => boardView("carpet");
 VIEWS.customers = () => {
   const q = S.ui.custQ.trim().toLowerCase();
   let list = [...S.customers];
-  if(q) list = list.filter(c=>[c.code,c.name,c.phone,c.location].join(" ").toLowerCase().includes(q));
+  if(q) list = list.filter(c=>[c.code,c.name,c.phone,c.whatsapp,c.location].join(" ").toLowerCase().includes(q));
   list.sort((a,b)=>(a.name||"").localeCompare(b.name||""));
   const stats = id => { const os=S.orders.filter(o=>o.customerId===id); return {n:os.length, spent:os.reduce((s,o)=>s+paidOf(o),0), bal:os.reduce((s,o)=>s+balanceOf(o),0)}; };
   const rows = list.map(c=>{ const st=stats(c.id); return `<tr class="rowlink" data-cust="${c.id}">
@@ -1070,7 +1070,7 @@ function renderOrderDetail(o){
     ${ro?"":`<div class="toolbar">${n?`<button class="btn pri" data-advance="${o.id}">Move to ${n} →</button>`:`<span class="chip s-${o.status}">Completed ${fmtShort(o.completedDate)}</span>`}
       <select class="inp" style="width:auto" data-setstatus="${o.id}">${f.map(s=>`<option ${s===o.status?"selected":""}>${s}</option>`).join("")}</select>
       <div class="sp"></div>
-      ${o.customerPhone?`<a class="btn wa" target="_blank" rel="noopener" href="${waLink(o, stageMsg(o, o.status))}" data-wasent="${o.id}|">${ic("wa",16)} Notify: ${esc(o.status)}</a>`:""}
+      ${waNum(o)?`<a class="btn wa" target="_blank" rel="noopener" href="${waLink(o, stageMsg(o, o.status))}" data-wasent="${o.id}|">${ic("wa",16)} Notify: ${esc(o.status)}</a>`:""}
     </div>`}
     <div class="two" style="grid-template-columns:1.3fr 1fr">
       <div>
@@ -1092,7 +1092,7 @@ function renderOrderDetail(o){
         <div class="sec-t" style="margin-top:4px">Details</div>
         <dl class="kv">
           <dt>Customer</dt><dd><a href="javascript:void 0" data-cust="${o.customerId}">${esc(o.customerName)}</a></dd>
-          <dt>Phone</dt><dd>${esc(o.customerPhone||"—")}</dd>
+          <dt>Phone</dt><dd>${esc(o.customerPhone||"—")}</dd>${waNum(o)&&waPhone(waNum(o))!==waPhone(o.customerPhone)?`<dt>WhatsApp</dt><dd>${esc(waNum(o))}</dd>`:""}
           <dt>Received</dt><dd>${fmtDate(o.dateReceived)}</dd>
           <dt>Expected</dt><dd class="${isLate(o)?"late":""}">${fmtDate(o.expected)}${isLate(o)?" · overdue":""}</dd>
           ${o.completedDate?`<dt>Completed</dt><dd>${fmtDate(o.completedDate)}</dd>`:""}
@@ -1145,7 +1145,7 @@ function openReceipt(o){
   const txt = receiptText(o);
   openModal(`<div class="md-h"><h2>Receipt ${esc(o.no)}</h2><div class="sp"></div><button class="closeb" data-close2>×</button></div>
   <div class="md-b"><div class="receipt" id="rc-text">${esc(txt)}</div></div>
-  <div class="md-f"><button class="btn" id="rc-copy">${ic("copy",15)} Copy</button>${o.customerPhone?`<a class="btn ok" target="_blank" rel="noopener" href="https://wa.me/${waPhone(o.customerPhone)}?text=${encodeURIComponent(txt)}">${ic("wa",15)} Send on WhatsApp</a>`:""}</div>`, true, "#modal2");
+  <div class="md-f"><button class="btn" id="rc-copy">${ic("copy",15)} Copy</button>${waNum(o)?`<a class="btn ok" target="_blank" rel="noopener" href="https://wa.me/${waPhone(waNum(o))}?text=${encodeURIComponent(txt)}">${ic("wa",15)} Send on WhatsApp</a>`:""}</div>`, true, "#modal2");
   $("#rc-copy").onclick = () => copyText(txt);
 }
 async function copyText(txt){
@@ -1172,7 +1172,7 @@ function openCust(id){ const c=custById(id); if(!c) return; S.modal={type:"cust"
 function renderCustDetail(c){
   const os = S.orders.filter(o=>o.customerId===c.id).sort((a,b)=>(b.createdAt||0)-(a.createdAt||0));
   const bal = os.reduce((s,o)=>s+balanceOf(o),0), paid = os.reduce((s,o)=>s+paidOf(o),0);
-  openModal(`<div class="md-h"><div><h2>${esc(c.name)}</h2><div class="muted small">${esc(c.code)} · ${esc(c.phone)}${c.location?" · "+esc(c.location):""}</div></div><div class="sp"></div><button class="closeb" data-close>×</button></div>
+  openModal(`<div class="md-h"><div><h2>${esc(c.name)}</h2><div class="muted small">${esc(c.code)} · ${esc(c.phone)}${c.whatsapp?` · WhatsApp ${esc(c.whatsapp)}`:""}${c.location?" · "+esc(c.location):""}</div></div><div class="sp"></div><button class="closeb" data-close>×</button></div>
   <div class="md-b">
     <div class="kpis" style="margin-bottom:12px"><div class="kpi"><div class="l">Orders</div><div class="v">${os.length}</div></div><div class="kpi"><div class="l">Total paid</div><div class="v">${money(paid)}</div></div><div class="kpi"><div class="l">Balance</div><div class="v" style="color:${bal>0?"var(--bad)":"inherit"}">${money(bal)}</div></div></div>
     <div class="sec-t">Order history</div>
@@ -1181,12 +1181,13 @@ function renderCustDetail(c){
   <div class="md-f">${S.readOnly?"":`${os.length?"":`<button class="btn danger" data-delcust="${c.id}" style="margin-right:auto">Delete</button>`}<button class="btn pdfbtn" data-pdf="statement|${c.id}">${ic("pdf",15)} Statement PDF</button><button class="btn" data-editcust="${c.id}">${ic("edit",15)} Edit</button><button class="btn pri" data-act="new-order" data-cid="${c.id}">${ic("plus",15)} New order</button>`}</div>`);
 }
 function openCustForm(c){
-  const isNew = !c; c = c || {name:"",phone:"",location:""};
+  const isNew = !c; c = c || {name:"",phone:"",whatsapp:"",location:""};
   openModal(`<div class="md-h"><h2>${isNew?"Add customer":"Edit customer"}</h2><div class="sp"></div><button class="closeb" data-close2>×</button></div>
   <form id="cust-form"><div class="md-b fgrid">
     <label class="f full">Name<input class="inp" name="name" required value="${esc(c.name)}"></label>
     <label class="f">Phone<input class="inp" name="phone" type="tel" value="${esc(c.phone)}" placeholder="07XX XXX XXX"></label>
-    <label class="f">Location<input class="inp" name="location" value="${esc(c.location)}"></label>
+    <label class="f">WhatsApp number <span class="muted small">(if different)</span><input class="inp" name="whatsapp" type="tel" value="${esc(c.whatsapp||"")}" placeholder="Leave empty if same as phone"></label>
+    <label class="f full">Location<input class="inp" name="location" value="${esc(c.location)}"></label>
   </div><div class="md-f"><button type="button" class="btn" data-close2>Cancel</button><button class="btn pri">Save</button></div></form>`, true, "#modal2");
   $("#cust-form").onsubmit = e => {
     e.preventDefault(); const fd = new FormData(e.target);
@@ -1194,10 +1195,11 @@ function openCustForm(c){
     const phone = fd.get("phone").trim();
     if(isNew && phone && S.customers.some(x=>waPhone(x.phone)===waPhone(phone))){ showToast("A customer with this phone already exists"); return; }
     const obj = isNew ? {id:uid(), code:nextCustCode(), createdAt:Date.now()} : structuredClone(c);
-    Object.assign(obj, {name, phone, location:fd.get("location").trim()});
+    let whatsapp = (fd.get("whatsapp")||"").trim(); if(whatsapp && waPhone(whatsapp)===waPhone(phone)) whatsapp = "";
+    Object.assign(obj, {name, phone, whatsapp, location:fd.get("location").trim()});
     store.put("customers", obj);
     if(!isNew){ // keep order copies of name/phone in sync
-      S.orders.filter(o=>o.customerId===obj.id && (o.customerName!==obj.name || o.customerPhone!==obj.phone)).forEach(o=>store.put("orders",{...structuredClone(o), customerName:obj.name, customerPhone:obj.phone}));
+      S.orders.filter(o=>o.customerId===obj.id && (o.customerName!==obj.name || o.customerPhone!==obj.phone || (o.customerWa||"")!==obj.whatsapp)).forEach(o=>store.put("orders",{...structuredClone(o), customerName:obj.name, customerPhone:obj.phone, customerWa:obj.whatsapp}));
     }
     closeModal("#modal2"); showToast(isNew?"Customer added":"Customer updated");
   };
@@ -1242,6 +1244,7 @@ function openOrderForm(existing, opts={}){
       <div id="newcust" class="full fgrid" style="${draft.customerId?"display:none":""}">
         <label class="f">Name<input class="inp" name="nc_name" placeholder="Customer name"></label>
         <label class="f">Phone<input class="inp" name="nc_phone" type="tel" placeholder="07XX XXX XXX"></label>
+        <label class="f">WhatsApp number <span class="muted small">(if different)</span><input class="inp" name="nc_wa" type="tel" placeholder="Leave empty if same as phone"></label>
         <label class="f full">Location<input class="inp" name="nc_location" placeholder="e.g. Eastleigh, 1st Avenue"></label>
       </div>
     </div>
@@ -1380,7 +1383,8 @@ function saveOrder(){
     if(!name){ showToast("Enter the customer's name or choose an existing customer"); fm.nc_name.focus(); return; }
     const dup = phone && S.customers.find(x=>waPhone(x.phone)===waPhone(phone));
     if(dup) cust = dup;
-    else { cust = {id:uid(), code:nextCustCode(), name, phone, location:fm.nc_location.value.trim(), createdAt:Date.now()}; store.put("customers", cust); }
+    else { let whatsapp = fm.nc_wa.value.trim(); if(whatsapp && waPhone(whatsapp)===waPhone(phone)) whatsapp = "";
+      cust = {id:uid(), code:nextCustCode(), name, phone, whatsapp, location:fm.nc_location.value.trim(), createdAt:Date.now()}; store.put("customers", cust); }
   }
   const items = draft.items.filter(i => i.kind==="carpet" ? (i.ctype==="corridor" ? num(i.metres)>0 : i.ctype==="custom" ? (num(i.length)>0 && num(i.width)>0) : true) : num(i.qty)>0);
   if(!items.length){ showToast(draft.service==="carpet"?"Tap a carpet size to add at least one carpet":"Add at least one item"); return; }
@@ -1394,7 +1398,7 @@ function saveOrder(){
   const o = structuredClone(draft); delete o._edit;
   o.items = items.map(i => i.kind==="carpet" ? JSON.parse(JSON.stringify({kind:"carpet", ctype:i.ctype, label:i.label||"", desc:i.desc||"", size:i.size, name:i.name, metres:i.metres!==undefined?num(i.metres):undefined, length:i.length!==undefined?num(i.length):undefined, width:i.width!==undefined?num(i.width):undefined, rate:i.rate!==undefined?num(i.rate):undefined, price:basePrice(i), qty:Math.max(1,num(i.qty)||1), express:!!i.express, mult:i.express?num(i.mult||S.settings.expressMult||2):undefined})) : {kind:"cloth", type:i.type, desc:i.desc||"", qty:num(i.qty), price:num(i.price)});
   delete o._mode;
-  o.customerId = cust.id; o.customerName = cust.name; o.customerPhone = cust.phone||"";
+  o.customerId = cust.id; o.customerName = cust.name; o.customerPhone = cust.phone||""; o.customerWa = cust.whatsapp||"";
   o.dateReceived = fm.dateReceived.value || today(); o.expected = fm.expected.value || o.dateReceived;
   o.notes = fm.notes.value.trim();
   if(!o.delivery.required){ o.delivery = {required:false, location:"", fee:0, driver:"", status:"Pending"}; }
@@ -1481,7 +1485,9 @@ function stageMsg(o, kind, amount){
   if(kind==="payment") return `Hello ${o.customerName}, we have received your payment of ${money(amount)} for order ${o.no}. Total ${money(orderTotal(o))}, paid ${money(paidOf(o))}, balance ${money(balanceOf(o))}.${sign}`;
   const f = STAGE_TEXT[kind]; return `Hello ${o.customerName}, ${f?f(o):"your order "+o.no+" is now "+kind+"."}${sign}`;
 }
-const waLink = (o, text) => `https://wa.me/${waPhone(o.customerPhone)}?text=${encodeURIComponent(text)}`;
+// WhatsApp goes to the customer's WhatsApp number if one is saved, otherwise their phone
+function waNum(o){ const c = o && o.customerId ? custById(o.customerId) : null; return (c && (c.whatsapp||"").trim()) || (o && o.customerWa) || (o && o.customerPhone) || ""; }
+const waLink = (o, text) => `https://wa.me/${waPhone(waNum(o))}?text=${encodeURIComponent(text)}`;
 function addHistory(o, ev){ o.history = [...(o.history||[]), {at:Date.now(), by:(S.profile&&S.profile.name)||"", ...ev}]; }
 function openNotify(orderId, kind, amount, evAt){
   if(!S.settings.notifyEveryStep) return;
@@ -1490,7 +1496,7 @@ function openNotify(orderId, kind, amount, evAt){
   const title = kind==="payment" ? "Payment recorded" : `${o.no} is now ${kind}`;
   openModal(`<div class="md-h"><div><h2>${esc(title)}</h2><div class="muted small">Notify ${esc(o.customerName)} on WhatsApp</div></div><div class="sp"></div><button class="closeb" data-close2>×</button></div>
   <div class="md-b"><div class="notify"><div class="msg">${esc(msg)}</div></div>
-  ${o.customerPhone?"":`<div class="banner" style="margin:12px 0 0">This customer has no phone number. Add one on the customer's page to send updates.</div>`}</div>
+  ${waNum(o)?"":`<div class="banner" style="margin:12px 0 0">This customer has no phone number. Add one on the customer's page to send updates.</div>`}</div>
   <div class="md-f"><button class="btn" data-close2>Skip</button>${(kind==="payment"||kind==="Received"||DONE.includes(kind))?`<button class="btn" data-pdf="send|${o.id}">${ic("pdf",15)} Send ${balanceOf(o)>0?"invoice":"receipt"} PDF</button>`:""}${o.customerPhone?`<a class="btn wa" target="_blank" rel="noopener" href="${waLink(o,msg)}" data-wasent="${o.id}|${evAt||""}">${ic("wa",16)} Send on WhatsApp</a>`:""}</div>`, true, "#modal2");
 }
 function offerReceipt(o, title){
@@ -1769,14 +1775,14 @@ async function sendInvoice(o){
   SEND = {o, file, msg, r};
   openModal(`<div class="md-h"><h2>Send ${r.kind} ${esc(o.no)}</h2><div class="sp"></div><button class="closeb" data-close2>×</button></div>
   <div class="md-b">
-    <div class="send-to"><b>${esc(o.customerName||"Customer")}</b>${o.customerPhone?` · ${esc(o.customerPhone)}`:` · <span class="muted">no phone number saved</span>`}</div>
+    <div class="send-to"><b>${esc(o.customerName||"Customer")}</b>${waNum(o)?` · ${ic("wa",13)} ${esc(waNum(o))}`:` · <span class="muted">no phone number saved</span>`}</div>
     <div class="send-file">${ic("pdf",22)}<div><b>${esc(r.filename)}</b><div class="small muted">${Math.max(1,Math.round(r.bytes.length/1024))} KB · with logo &amp; stamp</div></div></div>
-    ${canFile ? `<ol class="send-steps"><li>Tap <b>Send PDF</b> below.</li><li>Choose <b>WhatsApp</b> (or Email, SMS…).</li><li>Pick <b>${esc(o.customerName||"the customer")}</b>${o.customerPhone?` (${esc(o.customerPhone)})`:""} and send.</li></ol>`
+    ${canFile ? `<ol class="send-steps"><li>Tap <b>Send PDF</b> below.</li><li>Choose <b>WhatsApp</b> (or Email, SMS…).</li><li>Pick <b>${esc(o.customerName||"the customer")}</b>${waNum(o)?` (${esc(waNum(o))})`:""} and send.</li></ol>`
       : `<ol class="send-steps"><li>Tap <b>Download PDF</b>.</li><li>Tap <b>Open WhatsApp chat</b> — the message is typed for you.</li><li>In the chat, tap 📎 / attach and choose the downloaded PDF, then send.</li></ol>`}
   </div>
   <div class="md-f">
     ${canFile ? `<button class="btn ok" data-act="send-share">${ic("wa",15)} Send PDF</button>` : `<button class="btn" data-act="send-dl">${ic("pdf",15)} Download PDF</button>`}
-    ${o.customerPhone ? `<a class="btn ${canFile?"":"ok"}" target="_blank" rel="noopener" href="${waLink(o, msg + (canFile?"":" (PDF attached)"))}" data-act="send-chat">${ic("wa",15)} ${canFile?"Message only":"Open WhatsApp chat"}</a>` : ""}
+    ${waNum(o) ? `<a class="btn ${canFile?"":"ok"}" target="_blank" rel="noopener" href="${waLink(o, msg + (canFile?"":" (PDF attached)"))}" data-act="send-chat">${ic("wa",15)} ${canFile?"Message only":"Open WhatsApp chat"}</a>` : ""}
   </div>`, true, "#modal2");
 }
 let SEND = null;
