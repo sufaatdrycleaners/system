@@ -306,6 +306,8 @@ body:not(.role-admin) [data-delorder], body:not(.role-admin) [data-delcust], bod
   .two{grid-template-columns:1fr}
   .irow.carpet{grid-template-columns:1fr 1fr 1fr 1fr}
   .irow.cloth{grid-template-columns:1fr 1fr 1fr}
+  .irow.cloth > .gnew, .irow.cloth > select[data-k=type]{grid-column:1/-1}
+  .irow.cloth > [data-k=desc]{grid-column:1/-1}
   .irow .lt{text-align:left;padding-bottom:0}
   .ihead{display:none}
 }
@@ -385,6 +387,16 @@ img,svg,canvas,video{max-width:100%}
 @media (pointer:coarse){ .tabs button{min-height:36px} }
 /* landscape phones: keep the top bar short */
 @media (max-height:500px) and (max-width:1000px){ .mobile-bar img{height:30px} .mobile-bar{padding-top:6px;padding-bottom:6px} }
+.send-to{font-size:15px;margin-bottom:12px}
+.send-file{display:flex;gap:12px;align-items:center;padding:12px 14px;border:1px solid var(--line);border-radius:12px;background:var(--brand-soft);margin-bottom:12px}
+.send-file svg{color:#b4322d;flex:none}
+.send-steps{margin:0;padding-left:20px;line-height:1.8;font-size:14px}
+.gnew{display:flex;gap:6px;align-items:center}.gnew .inp{flex:1;min-width:0;border-color:var(--g2)}
+.gback{border:1px solid var(--line);background:#fff;border-radius:8px;width:34px;height:34px;cursor:pointer;flex:0 0 auto;font-size:16px;color:var(--muted)}
+a.btn{text-decoration:none}
+.oact{white-space:nowrap;text-align:right}.oact .btn{margin-left:6px;padding:6px 9px}
+.oact.m{display:flex;gap:8px;justify-content:flex-end;margin-top:8px}.oact.m .btn{margin:0}
+body:not(.role-admin) .oact [data-delorder]{display:none!important}
 </style>
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-auth-compat.js"></script>
@@ -475,6 +487,7 @@ const ICONS = {
   wallet:'<path d="M20 7H5a2 2 0 0 1 0-4h13v4"/><path d="M3 5v14a2 2 0 0 0 2 2h15V7"/><circle cx="16" cy="14" r="1.5"/>',
   wa:'<path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z"/>',
   edit:'<path d="M12 20h9"/><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4z"/>',
+  trash:'<path d="M3 6h18M8 6V4h8v2M19 6l-1 14H6L5 6M10 11v6M14 11v6"/>',
   check:'<path d="M20 6L9 17l-5-5"/>',
   eye:'<path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/>',
   logout:'<path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><path d="M16 17l5-5-5-5M21 12H9"/>',
@@ -722,6 +735,11 @@ function miniList(list){
 function emptyOrders(){
   return `<div class="empty"><b>No orders yet</b>Record the first cloth or carpet order to get started.<div style="margin-top:12px">${S.readOnly?"":`<button class="btn pri" data-act="new-order">${ic("plus")} New order</button>`}</div></div>`;
 }
+function oActs(o, labels){
+  const k = balanceOf(o)>0 ? "invoice" : "receipt";
+  return `<button class="btn sm ok" data-pdf="send|${o.id}" title="Send ${k} PDF to customer">${ic("wa",14)}${labels?` Send ${k}`:""}</button>`
+    + (S.readOnly ? "" : `<button class="btn sm danger" data-delorder="${o.id}" title="Delete order">${ic("trash",14)}${labels?" Delete":""}</button>`);
+}
 function orderTable(list){
   const rows = list.map(o=>`<tr class="rowlink" data-order="${o.id}">
     <td><b>${esc(o.no)}</b><div class="muted small">${fmtShort(o.dateReceived)}</div></td>
@@ -730,11 +748,13 @@ function orderTable(list){
     <td>${chip(o.status)}${isLate(o)?`<div class="late small">Overdue</div>`:""}</td>
     <td class="num">${money0(orderTotal(o))}</td>
     <td>${pchip(o)}${balanceOf(o)>0?`<div class="muted small">Bal ${money0(balanceOf(o))}</div>`:""}</td>
+    <td class="oact">${oActs(o)}</td>
   </tr>`).join("");
   const mobile = list.map(o=>`<div class="mitem" data-order="${o.id}">
     <div class="a"><span>${esc(o.no)} · ${esc(o.customerName)}</span><span>${money0(orderTotal(o))}</span></div>
-    <div class="b"><span>${svc(o.service)} ${chip(o.status)}</span>${pchip(o)}</div></div>`).join("");
-  return `<div class="tbl-wrap" style="overflow-x:auto"><table><thead><tr><th>Order</th><th>Customer</th><th>Service</th><th>Status</th><th class="num">Total (KSh)</th><th>Payment</th></tr></thead><tbody>${rows}</tbody></table></div><div class="list-m">${mobile}</div>`;
+    <div class="b"><span>${svc(o.service)} ${chip(o.status)}</span>${pchip(o)}</div>
+    <div class="oact m">${oActs(o, true)}</div></div>`).join("");
+  return `<div class="tbl-wrap" style="overflow-x:auto"><table><thead><tr><th>Order</th><th>Customer</th><th>Service</th><th>Status</th><th class="num">Total (KSh)</th><th>Payment</th><th></th></tr></thead><tbody>${rows}</tbody></table></div><div class="list-m">${mobile}</div>`;
 }
 
 VIEWS.orders = () => {
@@ -853,7 +873,7 @@ VIEWS.payments = () => {
       ${pays.map(p=>`<tr class="rowlink" data-order="${p.order.id}"><td>${fmtShort(p.date)}</td><td><b>${esc(p.order.no)}</b><div class="muted small">${esc(p.order.customerName)}</div></td><td>${esc(p.method)}${p.ref?`<div class="muted small">${esc(p.ref)}</div>`:""}</td><td class="num">${money0(p.amount)}</td></tr>`).join("")}
     </tbody></table></div>`:`<div class="empty">No payments in this period.</div>`}</div>
     <div class="card" style="align-self:start"><div class="card-h"><h2>Outstanding balances</h2></div>
-    ${owing.length?`<div>${owing.map(o=>`<div class="mitem" data-order="${o.id}"><div class="a"><span>${esc(o.no)} · ${esc(o.customerName)}</span><span style="color:var(--bad)">${money0(balanceOf(o))}</span></div><div class="b"><span>Total ${money0(orderTotal(o))} · Paid ${money0(paidOf(o))}</span>${S.readOnly?"":`<button class="btn sm" data-pay="${o.id}">Record payment</button>`}</div></div>`).join("")}</div>`:`<div class="empty">All orders are fully paid.</div>`}
+    ${owing.length?`<div>${owing.map(o=>`<div class="mitem" data-order="${o.id}"><div class="a"><span>${esc(o.no)} · ${esc(o.customerName)}</span><span style="color:var(--bad)">${money0(balanceOf(o))}</span></div><div class="b"><span>Total ${money0(orderTotal(o))} · Paid ${money0(paidOf(o))}</span><span style="display:flex;gap:6px">${S.readOnly?"":`<button class="btn sm" data-pay="${o.id}">Record payment</button>`}<button class="btn sm" data-pdf="send|${o.id}" title="Send invoice PDF">${ic("pdf",14)} Send</button></span></div></div>`).join("")}</div>`:`<div class="empty">All orders are fully paid.</div>`}
     </div>
   </div>`;
 };
@@ -1098,6 +1118,7 @@ function renderOrderDetail(o){
     ${ro?"":`<button class="btn danger" data-delorder="${o.id}" style="margin-right:auto">Delete</button><button class="btn" data-editorder="${o.id}">${ic("edit",15)} Edit</button>`}
     <button class="btn" data-receipt="${o.id}">${ic("receipt",15)} Text receipt</button>
     <button class="btn pdfbtn" data-pdf="invoice|${o.id}">${ic("pdf",15)} ${balanceOf(o)>0?"Invoice":"Receipt"} PDF</button>
+    <button class="btn ok" data-pdf="send|${o.id}">${ic("wa",15)} Send ${balanceOf(o)>0?"invoice":"receipt"} to customer</button>
   </div>`;
   openModal(html);
 }
@@ -1184,6 +1205,14 @@ function openCustForm(c){
 
 /* ---- order form ---- */
 let draft = null;
+function garmentList(){
+  const out = [], seen = new Set();
+  (S.settings.clothPrices||[]).forEach(p=>{ const k=(p.name||"").trim().toLowerCase(); if(k && !seen.has(k)){ seen.add(k); out.push({name:p.name.trim(), price:num(p.price)}); } });
+  const used = [];
+  [...(S.orders||[])].sort((a,b)=>(b.createdAt||0)-(a.createdAt||0)).forEach(o=>(o.items||[]).forEach(i=>{ if(i.kind!=="cloth") return; const n=String(i.type||"").trim(), k=n.toLowerCase(); if(n && !seen.has(k)){ seen.add(k); used.push({name:n, price:num(i.price), used:true}); } }));
+  used.sort((a,b)=>a.name.localeCompare(b.name));
+  return out.concat(used);
+}
 function blankItem(service){
   if(service==="carpet") return null;
   const p = (S.settings.clothPrices||[])[0] || {name:"Item",price:0};
@@ -1224,6 +1253,7 @@ function openOrderForm(existing, opts={}){
     <div class="sec-t" id="items-title" style="${draft.service==="carpet"?"display:none":""}">Items</div>
     <div id="items"></div>
     <button type="button" class="btn sm" style="margin-top:8px;${draft.service==="carpet"?"display:none":""}" id="add-item">${ic("plus",14)} Add item</button>
+    <button type="button" class="btn sm" style="margin-top:8px;${draft.service==="carpet"?"display:none":""}" id="add-garment">${ic("plus",14)} New garment name</button>
     <input type="file" accept="image/*" id="scan-file" hidden>
     <div class="sec-t">Dates</div>
     <div class="fgrid">
@@ -1259,7 +1289,7 @@ function renderItems(){
   const box = $("#items"); if(!box) return;
   if(draft.service==="carpet"){ box.className=""; box.innerHTML = carpetPicker(); return; }
   box.className = "items";
-  const prices = S.settings.clothPrices||[];
+  const garments = garmentList();
   const head = draft.service==="carpet"
     ? `<div class="irow carpet ihead" style="padding-bottom:0;border:0"><span>Carpet ID</span><span>Description</span><span>Length (m)</span><span>Width (m)</span><span>No.</span><span>Rate /m²</span><span style="text-align:right">Total</span><span></span></div>`
     : `<div class="irow cloth ihead" style="padding-bottom:0;border:0"><span>Garment</span><span>Description</span><span>Qty</span><span>Price</span><span style="text-align:right">Total</span><span></span></div>`;
@@ -1274,7 +1304,8 @@ function renderItems(){
         <div class="lt" data-lt>${carpetArea(it)} m² · ${money0(lineTotal(it))}</div>
         <button type="button" class="x" data-rm="${i}" title="Remove">×</button></div>`
     : `<div class="irow cloth" data-i="${i}">
-        <select class="inp" data-k="type">${prices.map(p=>`<option ${p.name===it.type?"selected":""}>${esc(p.name)}</option>`).join("")}${prices.some(p=>p.name===it.type)?"":`<option selected>${esc(it.type)}</option>`}</select>
+        ${it._new ? `<div class="gnew"><input class="inp" data-k="type" value="${esc(it.type)}" placeholder="New garment name" maxlength="40" autocomplete="off"><button type="button" class="gback" data-gback="${i}" title="Back to the list">↩</button></div>`
+          : `<select class="inp" data-k="type">${garments.map(p=>`<option ${p.name===it.type?"selected":""}>${esc(p.name)}</option>`).join("")}${garments.some(p=>p.name===it.type)||!it.type?"":`<option selected>${esc(it.type)}</option>`}<option value="__new">＋ New garment…</option></select>`}
         <input class="inp" data-k="desc" value="${esc(it.desc)}" placeholder="Colour, brand…">
         <input class="inp" type="number" min="1" data-k="qty" value="${esc(it.qty)}">
         <input class="inp" type="number" min="0" data-k="price" value="${esc(it.price)}">
@@ -1321,13 +1352,21 @@ function bindOrderForm(){
     $$("#svc-seg label").forEach(l=>{ const on=$("input",l).value===s; l.className = on ? ("on"+(s==="carpet"?" carpet":"")) : ""; });
     $("#items-title").style.display = s==="carpet"?"none":"";
     $("#add-item").style.display = s==="carpet" ? "none" : "";
+    $("#add-garment").style.display = s==="carpet" ? "none" : "";
     renderItems(); updateSum();
   });
+  $("#add-garment").onclick = () => { readDraft(); const it={kind:"cloth", type:"", desc:"", qty:1, price:"", _new:true}; const blank=draft.items.findIndex(i=>i.kind==="cloth"&&!i._new&&!String(i.desc||"").trim()&&draft.items.length===1&&num(i.qty)===1); if(blank===0) draft.items[0]=it; else draft.items.push(it); renderItems(); updateSum(); const rows=$$(".irow[data-i] .gnew input"); const ni=rows[rows.length-1]; ni&&ni.focus(); };
   $("#add-item").onclick = () => { readDraft(); draft.items.push(blankItem(draft.service)); renderItems(); updateSum(); const rows=$$(".irow[data-i]"); const last=rows[rows.length-1]; if(last){ const f=$("[data-k=desc]",last)||$("input",last); f&&f.focus(); } };
   $("#items").addEventListener("click", e => { const b=e.target.closest("[data-rm]"); if(!b) return; readDraft(); draft.items.splice(+b.dataset.rm,1); if(!draft.items.length && draft.service==="cloth") draft.items.push(blankItem("cloth")); renderItems(); updateSum(); });
   $("#items").addEventListener("click", e => { const t=e.target.closest("[data-tile]"); if(t){ readDraft(); addCarpetFromTile(t.dataset.tile); return; } const m=e.target.closest("[data-cmode]"); if(m){ readDraft(); draft._mode=m.dataset.cmode; renderItems(); return; } if(e.target.closest("[data-act=scan]")){ e.stopPropagation(); $("#scan-file").click(); } });
   $("#scan-file").onchange = e => { const f=e.target.files[0]; e.target.value=""; if(f){ readDraft(); scanPhoto(f); } };
-  $("#items").addEventListener("change", e => { const s=e.target; if(s.dataset.k==="type"){ const p=(S.settings.clothPrices||[]).find(x=>x.name===s.value); const row=s.closest(".irow"); if(p && row){ $("[data-k=price]",row).value=p.price; } } readDraft(); updateSum(); });
+  $("#items").addEventListener("change", e => { const s=e.target;
+    if(s.dataset.k==="type" && s.tagName==="SELECT"){
+      const row=s.closest(".irow");
+      if(s.value==="__new"){ readDraft(); const it=draft.items[+row.dataset.i]; it._new=true; it.type=""; it.price=""; renderItems(); updateSum(); const ni=$(`.irow[data-i="${row.dataset.i}"] [data-k=type]`); ni&&ni.focus(); return; }
+      const p=garmentList().find(x=>x.name===s.value); if(p && row){ $("[data-k=price]",row).value=p.price; } }
+    readDraft(); updateSum(); });
+  $("#items").addEventListener("click", e => { const b=e.target.closest("[data-gback]"); if(!b) return; readDraft(); const it=draft.items[+b.dataset.gback]; const g=garmentList()[0]||{name:"Item",price:0}; it._new=false; it.type=g.name; it.price=g.price; renderItems(); updateSum(); });
   fm.addEventListener("input", () => { readDraft(); updateSum(); });
   fm.delReq.onchange = () => { $("#del-fields").style.display = fm.delReq.checked ? "" : "none"; if(fm.delReq.checked && !fm.delLoc.value){ const c=custById(sel.value); fm.delLoc.value = c ? (c.location||"") : (fm.nc_location.value||""); } readDraft(); updateSum(); };
   fm.dateReceived.onchange = () => { if(!draft._edit) fm.expected.value = addDays(fm.dateReceived.value||today(), num(draft.service==="carpet"?S.settings.carpetDays:S.settings.clothDays)); };
@@ -1346,6 +1385,12 @@ function saveOrder(){
   const items = draft.items.filter(i => i.kind==="carpet" ? (i.ctype==="corridor" ? num(i.metres)>0 : i.ctype==="custom" ? (num(i.length)>0 && num(i.width)>0) : true) : num(i.qty)>0);
   if(!items.length){ showToast(draft.service==="carpet"?"Tap a carpet size to add at least one carpet":"Add at least one item"); return; }
   if(items.length < draft.items.length){ showToast("Fill in the size of every corridor / custom carpet, or remove it"); return; }
+  const unnamed = items.find(i=>i.kind==="cloth" && !String(i.type||"").trim());
+  if(unnamed){ showToast("Type the name of the new garment"); const r=$$(".irow[data-i] .gnew input").find(x=>!x.value.trim()); r&&r.focus(); return; }
+  items.forEach(i=>{ if(i.kind==="cloth") i.type = String(i.type).trim().replace(/\s+/g," "); });
+  const known = new Set((S.settings.clothPrices||[]).map(p=>p.name.trim().toLowerCase()));
+  const fresh = []; items.forEach(i=>{ if(i.kind==="cloth" && i._new && !known.has(i.type.toLowerCase())){ known.add(i.type.toLowerCase()); fresh.push({name:i.type, price:num(i.price)}); } });
+  if(fresh.length && S.role==="admin" && !S.readOnly){ store.saveSettings({...S.settings, clothPrices:[...(S.settings.clothPrices||[]), ...fresh]}); }
   const o = structuredClone(draft); delete o._edit;
   o.items = items.map(i => i.kind==="carpet" ? JSON.parse(JSON.stringify({kind:"carpet", ctype:i.ctype, label:i.label||"", desc:i.desc||"", size:i.size, name:i.name, metres:i.metres!==undefined?num(i.metres):undefined, length:i.length!==undefined?num(i.length):undefined, width:i.width!==undefined?num(i.width):undefined, rate:i.rate!==undefined?num(i.rate):undefined, price:basePrice(i), qty:Math.max(1,num(i.qty)||1), express:!!i.express, mult:i.express?num(i.mult||S.settings.expressMult||2):undefined})) : {kind:"cloth", type:i.type, desc:i.desc||"", qty:num(i.qty), price:num(i.price)});
   delete o._mode;
@@ -1367,7 +1412,7 @@ function saveOrder(){
   closeModal("#modal2"); showToast(draft._edit ? "Order updated" : `Order ${o.no} saved`);
   const wasEdit = draft._edit; draft = null;
   openOrder(o.id);
-  if(!wasEdit) openNotify(o.id, "Received", 0, o.history[0].at);
+  if(!wasEdit){ if(S.settings.notifyEveryStep) openNotify(o.id, "Received", 0, o.history[0].at); else offerReceipt(o, `Order ${o.no} saved`); }
 }
 
 /* ---- payment quick form ---- */
@@ -1388,7 +1433,7 @@ function recordPayment(form){
   addHistory(n, {type:"payment", amount:amt, method:fd.get("method")}); const evAt = n.history[n.history.length-1].at;
   store.put("orders", n); showToast(`Payment of ${money(amt)} recorded`);
   if(form.dataset.quick) closeModal("#modal2");
-  openNotify(n.id, "payment", amt, evAt);
+  if(S.settings.notifyEveryStep) openNotify(n.id, "payment", amt, evAt); else offerReceipt(n, "Payment recorded");
 }
 
 /* ---- expenses ---- */
@@ -1446,7 +1491,12 @@ function openNotify(orderId, kind, amount, evAt){
   openModal(`<div class="md-h"><div><h2>${esc(title)}</h2><div class="muted small">Notify ${esc(o.customerName)} on WhatsApp</div></div><div class="sp"></div><button class="closeb" data-close2>×</button></div>
   <div class="md-b"><div class="notify"><div class="msg">${esc(msg)}</div></div>
   ${o.customerPhone?"":`<div class="banner" style="margin:12px 0 0">This customer has no phone number. Add one on the customer's page to send updates.</div>`}</div>
-  <div class="md-f"><button class="btn" data-close2>Skip</button>${o.customerPhone?`<a class="btn wa" target="_blank" rel="noopener" href="${waLink(o,msg)}" data-wasent="${o.id}|${evAt||""}">${ic("wa",16)} Send on WhatsApp</a>`:""}</div>`, true, "#modal2");
+  <div class="md-f"><button class="btn" data-close2>Skip</button>${(kind==="payment"||kind==="Received"||DONE.includes(kind))?`<button class="btn" data-pdf="send|${o.id}">${ic("pdf",15)} Send ${balanceOf(o)>0?"invoice":"receipt"} PDF</button>`:""}${o.customerPhone?`<a class="btn wa" target="_blank" rel="noopener" href="${waLink(o,msg)}" data-wasent="${o.id}|${evAt||""}">${ic("wa",16)} Send on WhatsApp</a>`:""}</div>`, true, "#modal2");
+}
+function offerReceipt(o, title){
+  openModal(`<div class="md-h"><div><h2>${esc(title)}</h2><div class="muted small">${esc(o.no)} · ${esc(o.customerName)}</div></div><div class="sp"></div><button class="closeb" data-close2>×</button></div>
+  <div class="md-b"><p style="margin:0">Send the ${balanceOf(o)>0?"invoice":"receipt"} PDF to the customer now?</p></div>
+  <div class="md-f"><button class="btn" data-close2>Not now</button><button class="btn ok" data-pdf="send|${o.id}">${ic("pdf",15)} Send ${balanceOf(o)>0?"invoice":"receipt"} PDF</button></div>`, true, "#modal2");
 }
 function markWaSent(orderId, evAt){
   const o = orderById(orderId); if(!o) return;
@@ -1675,7 +1725,7 @@ async function savePdf(pdf, filename){
   pdf.footer(); const bytes = pdf.bytes(); window.__lastPdf = bytes;
   downloadBlob(new Blob([bytes],{type:"application/pdf"}), filename);
 }
-async function invoicePdf(o){
+async function invoicePdf(o, forSend=false){
   showToast("Preparing PDF…");
   const paidUp = balanceOf(o)<=0;
   const pdf = await pdfBase(paidUp ? "RECEIPT" : "INVOICE", `${o.no} · ${fmtDate(o.dateReceived)}`);
@@ -1702,7 +1752,51 @@ async function invoicePdf(o){
   else { pdf.text("No payments yet", 36, py, {size:9, color:MUTED}); py+=13; }
   py += 6; pdf.text("Pay via M-PESA or cash. Please quote "+o.no+".", 36, py, {size:8.5, color:MUTED});
   await pdf.stamp(205, Math.max(py, y) + 6, 118, paidUp ? "PAID" : "");
-  await savePdf(pdf, `${o.no}-${paidUp?"Receipt":"Invoice"}.pdf`);
+  const fname = `${o.no}-${paidUp?"Receipt":"Invoice"}.pdf`;
+  if(forSend){ pdf.footer(); return {bytes: pdf.bytes(), filename: fname, kind: paidUp?"receipt":"invoice"}; }
+  await savePdf(pdf, fname);
+}
+/* ---- send the receipt / invoice PDF to the customer ---- */
+function sendMsg(o, kind){
+  const st=S.settings;
+  return `Hello ${o.customerName}, here is your ${kind} for order ${o.no} from ${st.businessName||"SUFAAT Drycleaners"}. Total ${money(orderTotal(o))}, paid ${money(paidOf(o))}, balance ${money(balanceOf(o))}. Thank you!${st.phone?" Tel "+st.phone:""}`;
+}
+async function sendInvoice(o){
+  const r = await invoicePdf(o, true);
+  const file = new File([r.bytes], r.filename, {type:"application/pdf"});
+  const msg = sendMsg(o, r.kind);
+  const canFile = !!(navigator.canShare && (()=>{ try{ return navigator.canShare({files:[file]}); }catch(_){ return false; } })());
+  SEND = {o, file, msg, r};
+  openModal(`<div class="md-h"><h2>Send ${r.kind} ${esc(o.no)}</h2><div class="sp"></div><button class="closeb" data-close2>×</button></div>
+  <div class="md-b">
+    <div class="send-to"><b>${esc(o.customerName||"Customer")}</b>${o.customerPhone?` · ${esc(o.customerPhone)}`:` · <span class="muted">no phone number saved</span>`}</div>
+    <div class="send-file">${ic("pdf",22)}<div><b>${esc(r.filename)}</b><div class="small muted">${Math.max(1,Math.round(r.bytes.length/1024))} KB · with logo &amp; stamp</div></div></div>
+    ${canFile ? `<ol class="send-steps"><li>Tap <b>Send PDF</b> below.</li><li>Choose <b>WhatsApp</b> (or Email, SMS…).</li><li>Pick <b>${esc(o.customerName||"the customer")}</b>${o.customerPhone?` (${esc(o.customerPhone)})`:""} and send.</li></ol>`
+      : `<ol class="send-steps"><li>Tap <b>Download PDF</b>.</li><li>Tap <b>Open WhatsApp chat</b> — the message is typed for you.</li><li>In the chat, tap 📎 / attach and choose the downloaded PDF, then send.</li></ol>`}
+  </div>
+  <div class="md-f">
+    ${canFile ? `<button class="btn ok" data-act="send-share">${ic("wa",15)} Send PDF</button>` : `<button class="btn" data-act="send-dl">${ic("pdf",15)} Download PDF</button>`}
+    ${o.customerPhone ? `<a class="btn ${canFile?"":"ok"}" target="_blank" rel="noopener" href="${waLink(o, msg + (canFile?"":" (PDF attached)"))}" data-act="send-chat">${ic("wa",15)} ${canFile?"Message only":"Open WhatsApp chat"}</a>` : ""}
+  </div>`, true, "#modal2");
+}
+let SEND = null;
+async function sendShare(){
+  if(!SEND) return;
+  try{
+    await navigator.share({files:[SEND.file], title: SEND.r.filename, text: SEND.msg});
+    logSent(SEND.o, SEND.r.kind); closeModal("#modal2"); showToast("Sent");
+  }catch(err){
+    if(err && err.name==="AbortError") return;           // they closed the share sheet
+    try{ await navigator.share({files:[SEND.file]}); logSent(SEND.o, SEND.r.kind); closeModal("#modal2"); showToast("Sent"); }
+    catch(e2){ if(e2 && e2.name==="AbortError") return; downloadBlob(SEND.file, SEND.r.filename); showToast("Couldn't open sharing — PDF downloaded instead"); }
+  }
+}
+function logSent(o, kind){
+  try{ const cur = orderById(o.id); if(!cur) return;
+    const n = structuredClone(cur); n.history = n.history||[];
+    n.history.push({at:Date.now(), type:"wa", wa:true, text:`${kind==="receipt"?"Receipt":"Invoice"} PDF sent to customer`});
+    store.put("orders", n);
+  }catch(_){}
 }
 async function balancesPdf(){
   showToast("Preparing PDF…");
@@ -2313,6 +2407,9 @@ document.addEventListener("click", async e => {
     if(a==="forgot"){ forgotPassword(); return; }
     if(a==="eye"){ document.querySelectorAll("#login-form [name=password],#signup-form [name=password],#signup-form [name=password2]").forEach(i=>i.type = i.type==="password"?"text":"password"); return; }
     if(a==="to-signup"||a==="to-signin"){ const f=$("#login-form")||$("#signup-form"); if(f&&f.email) LOGIN.email=f.email.value; LOGIN.mode = a==="to-signup"?"signup":"signin"; LOGIN.error=""; LOGIN.info=""; renderLogin(); return; }
+    if(a==="send-share"){ sendShare(); return; }
+    if(a==="send-dl"){ if(SEND){ downloadBlob(SEND.file, SEND.r.filename); } return; }
+    if(a==="send-chat"){ if(SEND) logSent(SEND.o, SEND.r.kind); return; }
     if(a==="new-user"){ openUserForm(); return; }
     if(a==="backup"){ exportBackup(); return; }
     if(a==="fin-entry"){ openFinEntry(null, act.dataset.type||"in"); return; }
@@ -2336,6 +2433,7 @@ document.addEventListener("click", async e => {
   const pdfB = t.closest("[data-pdf]");
   if(pdfB){ const [k,id] = pdfB.dataset.pdf.split("|"); pdfB.disabled=true; try{
       if(k==="invoice"){ const o=orderById(id); if(o) await invoicePdf(o); }
+      else if(k==="send"){ const o=orderById(id); if(o) await sendInvoice(o); }
       else if(k==="statement"){ const c=custById(id); if(c) await statementPdf(c); }
       else if(k==="balances") await balancesPdf(); else if(k==="finance") await financePdf(); else if(k==="report") await reportPdf();
     }catch(err){ console.error(err); showToast("Couldn't build the PDF"); } finally { pdfB.disabled=false; } return; }
