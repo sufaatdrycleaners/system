@@ -2110,6 +2110,8 @@ function startApp(){
   }
   firebase.initializeApp(FIREBASE_CONFIG);
   AUTH = firebase.auth(); DB = firebase.firestore();
+  // stay signed in only while this tab/browser is open — closing it signs the person out
+  try{ if(firebase.auth.Auth && AUTH.setPersistence) AUTH.setPersistence(firebase.auth.Auth.Persistence.SESSION).catch(()=>{}); }catch(_){}
   try{ DB.enablePersistence({synchronizeTabs:true}).catch(()=>{}); }catch(_){}
   AUTH.onAuthStateChanged(onAuth);
 }
@@ -2126,7 +2128,7 @@ function idleBanner(secs){
 }
 async function idleSignOut(){
   if(IDLE_OUT || !S.user) return; IDLE_OUT = true; idleStop();
-  LOGIN.error = ""; LOGIN.info = "You were signed out after 5 minutes without activity. Sign in again to continue.";
+  LOGIN.email = ""; LOGIN.error = ""; LOGIN.info = "You were signed out after 5 minutes without activity. Sign in again to continue.";
   try{ await AUTH.signOut(); }catch(_){ location.reload(); }
 }
 function idleCheck(){
@@ -2253,9 +2255,9 @@ function renderLogin(){
         <h1>Sign in</h1>
         <p class="lg-p">Choose who you are, then enter your details.</p>
         <div class="lg-tabs">${Object.entries(ROLES).map(([k,l])=>`<button type="button" class="${t===k?"on":""}" data-ltab="${k}">${l}</button>`).join("")}</div>
-        <label class="lg-l">Email<input class="lg-i" type="email" name="email" autocomplete="username" placeholder="example@mail.com" value="${esc(LOGIN.email||"")}" required></label>
+        <label class="lg-l">Email<input class="lg-i" type="email" name="email" autocomplete="off" autocapitalize="none" spellcheck="false" placeholder="example@mail.com" value="${esc(LOGIN.email||"")}" required></label>
         <div class="lg-row"><span>Password</span><a href="javascript:void 0" data-act="forgot">Forgot password?</a></div>
-        <div class="lg-pw"><input class="lg-i" type="password" name="password" autocomplete="current-password" placeholder="••••••••" required><button type="button" class="lg-eye" data-act="eye" aria-label="Show password">${ic("eye",20)}</button></div>
+        <div class="lg-pw"><input class="lg-i" type="password" name="password" autocomplete="new-password" data-lpignore="true" placeholder="••••••••" required><button type="button" class="lg-eye" data-act="eye" aria-label="Show password">${ic("eye",20)}</button></div>
         ${LOGIN.error?`<div class="lg-err">${esc(LOGIN.error)}</div>`:""}
         ${LOGIN.info?`<div class="lg-ok">${esc(LOGIN.info)}</div>`:""}
         <button class="lg-btn" ${LOGIN.busy?"disabled":""}>${LOGIN.busy?"Signing in…":"Sign in"}</button>
@@ -2264,6 +2266,7 @@ function renderLogin(){
     </section>
   </div>`;
   if(up){ $("#signup-form").onsubmit = signUp; return; }
+  blockAutofill($("#login-form"));
   $("#login-form").onsubmit = async e => {
     e.preventDefault(); const f = e.target;
     const email = f.email.value.trim(), pw = f.password.value;
@@ -2319,7 +2322,15 @@ async function forgotPassword(){
   catch(err){ LOGIN.error = /invalid-email/.test(err.code||"") ? "That email address doesn't look right." : "Couldn't send the reset email. Try again."; }
   renderLogin();
 }
-async function signOut(){ if(await confirmBox("Sign out of the system?","Sign out")){ await AUTH.signOut(); } }
+async function signOut(){ if(await confirmBox("Sign out of the system?","Sign out")){ LOGIN.email=""; LOGIN.error=""; LOGIN.info="You've signed out. Enter your email and password to sign in again."; await AUTH.signOut(); } }
+/* browsers love to re-fill saved passwords; empty anything they fill in before the person types */
+function blockAutofill(form){
+  if(!form) return; let touched = false;
+  const mark = () => { touched = true; };
+  form.addEventListener("keydown", mark, true); form.addEventListener("paste", mark, true);
+  const wipe = () => { if(touched) return; const pw = form.password; if(pw && pw.value) pw.value = ""; if(form.email && form.email.value && form.email.value !== (LOGIN.email||"")) form.email.value = LOGIN.email||""; };
+  [60, 400, 1200, 2500].forEach(ms => setTimeout(wipe, ms));
+}
 
 /* ---- staff accounts (admin) ---- */
 VIEWS.users = () => {
