@@ -323,6 +323,7 @@ body:not(.role-admin) [data-delorder], body:not(.role-admin) [data-delcust], bod
 .mitem:last-child{border-bottom:0}
 .mitem .a{display:flex;justify-content:space-between;gap:8px;font-weight:600}
 .mitem .b{display:flex;justify-content:space-between;gap:8px;color:var(--muted);font-size:12.5px;margin-top:3px;align-items:center}
+#idle-warn{position:fixed;left:50%;bottom:22px;transform:translateX(-50%);z-index:9999;background:#7a1d1d;color:#fff;padding:12px 18px;border-radius:12px;box-shadow:0 8px 28px rgba(0,0,0,.35);font-size:14px;max-width:92vw;text-align:center}
 </style>
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-auth-compat.js"></script>
@@ -1956,10 +1957,44 @@ function startApp(){
   try{ DB.enablePersistence({synchronizeTabs:true}).catch(()=>{}); }catch(_){}
   AUTH.onAuthStateChanged(onAuth);
 }
+/* ---- auto sign-out after 5 minutes without activity ---- */
+const IDLE_MS = 5*60*1000, IDLE_WARN_MS = 60*1000, IDLE_KEY = "sufaat_last_active";
+let IDLE_TIMER = null, IDLE_OUT = false;
+function idleMark(){ try{ localStorage.setItem(IDLE_KEY, String(Date.now())); }catch(_){ window.__lastActive = Date.now(); } }
+function idleLast(){ try{ return +localStorage.getItem(IDLE_KEY) || 0; }catch(_){ return window.__lastActive || 0; } }
+function idleBanner(secs){
+  let b = document.getElementById("idle-warn");
+  if(secs == null){ if(b) b.remove(); return; }
+  if(!b){ b = document.createElement("div"); b.id = "idle-warn"; document.body.appendChild(b); }
+  b.innerHTML = `<b>Still there?</b> You'll be signed out in ${secs}s. Tap anywhere to stay signed in.`;
+}
+async function idleSignOut(){
+  if(IDLE_OUT || !S.user) return; IDLE_OUT = true; idleStop();
+  LOGIN.error = ""; LOGIN.info = "You were signed out after 5 minutes without activity. Sign in again to continue.";
+  try{ await AUTH.signOut(); }catch(_){ location.reload(); }
+}
+function idleCheck(){
+  if(!S.user) return idleStop();
+  const left = IDLE_MS - (Date.now() - idleLast());
+  if(left <= 0) return idleSignOut();
+  idleBanner(left <= IDLE_WARN_MS ? Math.ceil(left/1000) : null);
+}
+function idleStart(){ IDLE_OUT = false; if(!IDLE_TIMER) IDLE_TIMER = setInterval(idleCheck, 1000); idleCheck(); }
+function idleStop(){ if(IDLE_TIMER){ clearInterval(IDLE_TIMER); IDLE_TIMER = null; } idleBanner(null); }
+let IDLE_THROTTLE = 0;
+["pointerdown","keydown","touchstart","wheel","scroll","mousemove","input"].forEach(ev => window.addEventListener(ev, () => {
+  if(!S.user || IDLE_OUT) return;
+  if(Date.now() - idleLast() >= IDLE_MS) return idleSignOut();   // came back too late (e.g. iPad was asleep)
+  const n = Date.now(); if(n - IDLE_THROTTLE < 2000) return; IDLE_THROTTLE = n;
+  idleMark(); idleBanner(null);
+}, {passive:true, capture:true}));
+document.addEventListener("visibilitychange", () => { if(!document.hidden) idleCheck(); });
 async function onAuth(u){
   UNSUBS.forEach(f=>{ try{ f(); }catch(_){} }); UNSUBS = [];
-  if(!u){ S.user=null; S.role=null; S.profile=null; S.mode="loading"; document.body.className=""; renderLogin(); return; }
-  S.user = u; S.mode = "loading"; renderLoading();
+  if(!u){ idleStop(); S.user=null; S.role=null; S.profile=null; S.mode="loading"; document.body.className=""; renderLogin(); return; }
+  if(idleLast() && Date.now() - idleLast() >= IDLE_MS && !LOGIN.justSignedIn){ S.user = u; await idleSignOut(); return; }
+  LOGIN.justSignedIn = false; idleMark();
+  S.user = u; S.mode = "loading"; renderLoading(); idleStart();
   let p = null;
   try{ const snap = await DB.doc("users/"+u.uid).get(); p = snap.exists ? snap.data() : null; }catch(e){ console.warn(e); }
   const email = (u.email||"").toLowerCase();
@@ -2054,7 +2089,7 @@ function renderLogin(){
     const email = f.email.value.trim(), pw = f.password.value;
     LOGIN.email = email; LOGIN.error=""; LOGIN.info="";
     if(!email || !pw){ LOGIN.error="Enter your email and password."; renderLogin(); return; }
-    LOGIN.busy = true; renderLogin();
+    LOGIN.busy = true; renderLogin(); LOGIN.justSignedIn = true; idleMark();
     try{ await AUTH.signInWithEmailAndPassword(email, pw); LOGIN.busy=false; }
     catch(err){ LOGIN.busy=false; LOGIN.error = authMsg(err); renderLogin(); }
   };
