@@ -307,7 +307,7 @@ body:not(.role-admin) [data-delorder], body:not(.role-admin) [data-delcust], bod
   .irow.carpet{grid-template-columns:1fr 1fr 1fr 1fr}
   .irow.cloth{grid-template-columns:1fr 1fr 1fr}
   .irow.cloth > .gnew, .irow.cloth > select[data-k=type]{grid-column:1/-1}
-  .irow.cloth > [data-k=desc]{grid-column:1/-1}
+  .irow.cloth > [data-k=desc], .irow.cloth > .dcell{grid-column:1/-1}
   .irow .lt{text-align:left;padding-bottom:0}
   .ihead{display:none}
 }
@@ -397,6 +397,12 @@ a.btn{text-decoration:none}
 .oact{white-space:nowrap;text-align:right}.oact .btn{margin-left:6px;padding:6px 9px}
 .oact.m{display:flex;gap:8px;justify-content:flex-end;margin-top:8px}.oact.m .btn{margin:0}
 body:not(.role-admin) .oact [data-delorder]{display:none!important}
+.dcell{display:flex;gap:6px;min-width:0}.dcell .inp{min-width:0}.dcell>.inp{flex:1}
+.csel{position:relative;flex:0 0 132px;min-width:0}.csel select{padding-left:28px;width:100%}
+.csel .sw{position:absolute;left:9px;top:50%;transform:translateY(-50%);pointer-events:none}
+.sw{display:inline-block;width:14px;height:14px;border-radius:50%;border:1px solid rgba(0,0,0,.25);vertical-align:-2px;margin-right:5px;flex:none}
+.sw.empty{background:repeating-linear-gradient(45deg,#ddd 0 3px,#fff 3px 6px)}
+@media (max-width:980px){ .csel{flex:0 0 46%} }
 </style>
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-auth-compat.js"></script>
@@ -499,6 +505,23 @@ const ICONS = {
 const ic = (n, s=18) => `<svg viewBox="0 0 24 24" width="${s}" height="${s}" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">${ICONS[n]||""}</svg>`;
 
 /* ---------------- order maths ---------------- */
+const COLOURS = [
+  ["White","#ffffff"],["Off-white","#f5f1e6"],["Cream","#f3e5ab"],["Beige","#d8c3a5"],["Khaki","#bfae7a"],
+  ["Yellow","#f2c40f"],["Gold","#c9a227"],["Mustard","#d1a10d"],["Orange","#f28c28"],["Peach","#f6b38f"],
+  ["Coral","#f26b5b"],["Red","#d32f2f"],["Maroon","#7b1e2b"],["Burgundy","#6d1a36"],["Pink","#f48fb1"],
+  ["Hot pink","#e91e63"],["Purple","#7b1fa2"],["Lilac","#c8a2c8"],["Navy blue","#1a2a5a"],["Blue","#1e63c9"],
+  ["Royal blue","#2848b8"],["Sky blue","#7cc4ec"],["Turquoise","#1fb5b0"],["Teal","#00796b"],["Green","#2e8b3e"],
+  ["Olive","#6b7a2a"],["Lime","#9ccc3a"],["Mint","#9fe2bf"],["Brown","#6d4c41"],["Tan","#c19a6b"],
+  ["Camel","#b8864b"],["Grey","#9e9e9e"],["Charcoal","#3d3f42"],["Silver","#c0c0c0"],["Black","#111111"],
+  ["Multicolour",""],["Printed / patterned",""]
+];
+const colourHex = n => { const c = COLOURS.find(x=>x[0]===n); return c ? c[1] : ""; };
+function swatch(n){ if(!n) return ""; const h = colourHex(n);
+  return `<i class="sw" style="background:${h || "conic-gradient(#e53935,#fbc02d,#43a047,#1e88e5,#8e24aa,#e53935)"}"></i>`; }
+function colourSelect(v){
+  return `<div class="csel">${swatch(v)||'<i class="sw empty"></i>'}<select class="inp" data-k="color" title="Colour"><option value="">Colour…</option>${COLOURS.map(([n])=>`<option ${n===v?"selected":""}>${n}</option>`).join("")}${v&&!colourHex(v)&&!COLOURS.some(c=>c[0]===v)?`<option selected>${esc(v)}</option>`:""}</select></div>`;
+}
+const itemNote = i => [i.color, i.desc].filter(x=>String(x||"").trim()).join(" · ");
 const TILE_COLORS = ["#33691e","#8d6e63","#f4511e","#c2185b","#004d40","#7b1fa2","#5d4037","#01579b","#455a64","#ef6c00","#2e7d32","#6a1b9a"];
 function carpetName(it){
   if(it.ctype==="corridor") return `Corridor ${num(it.metres)} m`;
@@ -766,7 +789,7 @@ VIEWS.orders = () => {
   else if(u.orderFilter==="done") list = list.filter(o=>DONE.includes(o.status));
   else if(u.orderFilter==="unpaid") list = list.filter(o=>balanceOf(o)>0);
   if(u.orderSvc!=="all") list = list.filter(o=>o.service===u.orderSvc);
-  if(q) list = list.filter(o=>[o.no,o.customerName,o.customerPhone,...(o.items||[]).map(i=>i.type||i.desc||i.label)].join(" ").toLowerCase().includes(q));
+  if(q) list = list.filter(o=>[o.no,o.customerName,o.customerPhone,...(o.items||[]).map(i=>[i.type,i.desc,i.label,i.color].join(" "))].join(" ").toLowerCase().includes(q));
   list.sort((a,b)=>(b.createdAt||0)-(a.createdAt||0));
   const f = [["active","Active"],["pending","Pending"],["ready","Ready"],["done","Completed"],["unpaid","Has balance"],["all","All"]];
   return topbar("Orders", `${S.orders.length} total`, newOrderBtn()) +
@@ -1058,9 +1081,9 @@ function renderOrderDetail(o){
   const f = flowOf(o); const ci = f.indexOf(o.status); const n = nextStatus(o);
   const ro = S.readOnly;
   const items = (o.items||[]).map(i=> i.kind==="carpet"
-    ? (i.ctype ? `<tr><td><b>${esc(i.label?i.label+" · ":"")}${esc(carpetName(i))}</b> ${i.express?`<span class="xchip">EXPRESS</span>`:""}${i.desc?`<div class="muted small">${esc(i.desc)}</div>`:""}</td><td>${Math.max(1,num(i.qty)||1)}</td><td class="num">${money0(basePrice(i)*(i.express?num(i.mult||2):1))}</td><td class="num">${money0(lineTotal(i))}</td></tr>`
-      : `<tr><td><b>${esc(i.label||"Carpet")}</b>${i.desc?`<div class="muted small">${esc(i.desc)}</div>`:""}</td><td>${num(i.length)} × ${num(i.width)} m = ${carpetArea(i)} m²${num(i.qty)>1?` × ${num(i.qty)}`:""}</td><td class="num">${money0(i.rate)}/m²</td><td class="num">${money0(lineTotal(i))}</td></tr>`)
-    : `<tr><td><b>${esc(i.type||"Item")}</b>${i.desc?`<div class="muted small">${esc(i.desc)}</div>`:""}</td><td>${num(i.qty)}</td><td class="num">${money0(i.price)}</td><td class="num">${money0(lineTotal(i))}</td></tr>`).join("");
+    ? (i.ctype ? `<tr><td><b>${esc(i.label?i.label+" · ":"")}${esc(carpetName(i))}</b> ${i.express?`<span class="xchip">EXPRESS</span>`:""}${itemNote(i)?`<div class="muted small">${swatch(i.color)}${esc(itemNote(i))}</div>`:""}</td><td>${Math.max(1,num(i.qty)||1)}</td><td class="num">${money0(basePrice(i)*(i.express?num(i.mult||2):1))}</td><td class="num">${money0(lineTotal(i))}</td></tr>`
+      : `<tr><td><b>${esc(i.label||"Carpet")}</b>${itemNote(i)?`<div class="muted small">${swatch(i.color)}${esc(itemNote(i))}</div>`:""}</td><td>${num(i.length)} × ${num(i.width)} m = ${carpetArea(i)} m²${num(i.qty)>1?` × ${num(i.qty)}`:""}</td><td class="num">${money0(i.rate)}/m²</td><td class="num">${money0(lineTotal(i))}</td></tr>`)
+    : `<tr><td><b>${esc(i.type||"Item")}</b>${itemNote(i)?`<div class="muted small">${swatch(i.color)}${esc(itemNote(i))}</div>`:""}</td><td>${num(i.qty)}</td><td class="num">${money0(i.price)}</td><td class="num">${money0(lineTotal(i))}</td></tr>`).join("");
   const pays = (o.payments||[]).map(p=>`<tr><td>${fmtShort(p.date)}</td><td>${esc(p.method)}${p.ref?` <span class="muted small">${esc(p.ref)}</span>`:""}</td><td class="num">${money0(p.amount)}</td><td style="width:1%">${ro?"":`<button class="btn sm ghost" data-rmpay="${p.id}" title="Remove payment">✕</button>`}</td></tr>`).join("");
   const d = o.delivery||{};
   const html = `
@@ -1133,7 +1156,7 @@ function receiptText(o){
   (o.items||[]).forEach(i=>{
     if(i.kind==="carpet" && i.ctype) lines.push(`${i.label?i.label+" ":""}${carpetLabel(i)}${num(i.qty)>1?" x"+num(i.qty):""}`, `   = KSh ${money0(lineTotal(i))}`);
     else if(o.service==="carpet") lines.push(`${i.label||"Carpet"} ${num(i.length)}m x ${num(i.width)}m = ${carpetArea(i)}m2${num(i.qty)>1?" x"+num(i.qty):""} @${money0(i.rate)}`, `   = KSh ${money0(lineTotal(i))}`);
-    else lines.push(`${num(i.qty)} x ${i.type||"Item"}${i.desc?" ("+i.desc+")":""} @${money0(i.price)}`, `   = KSh ${money0(lineTotal(i))}`);
+    else lines.push(`${num(i.qty)} x ${i.type||"Item"}${itemNote(i)?" ("+itemNote(i)+")":""} @${money0(i.price)}`, `   = KSh ${money0(lineTotal(i))}`);
   });
   lines.push(L);
   if(delFee(o)) lines.push(`Delivery: KSh ${money0(delFee(o))}`);
@@ -1299,7 +1322,7 @@ function renderItems(){
   box.innerHTML = head + draft.items.map((it,i)=> it.kind==="carpet"
     ? `<div class="irow carpet" data-i="${i}">
         <input class="inp" data-k="label" value="${esc(it.label)}" placeholder="C1">
-        <input class="inp" data-k="desc" value="${esc(it.desc)}" placeholder="Colour, type…">
+        <div class="dcell">${colourSelect(it.color)}<input class="inp" data-k="desc" value="${esc(it.desc)}" placeholder="Type, notes…"></div>
         <input class="inp" type="number" step="0.01" min="0" data-k="length" value="${esc(it.length)}" placeholder="L">
         <input class="inp" type="number" step="0.01" min="0" data-k="width" value="${esc(it.width)}" placeholder="W">
         <input class="inp" type="number" min="1" data-k="qty" value="${esc(it.qty)}">
@@ -1309,7 +1332,7 @@ function renderItems(){
     : `<div class="irow cloth" data-i="${i}">
         ${it._new ? `<div class="gnew"><input class="inp" data-k="type" value="${esc(it.type)}" placeholder="New garment name" maxlength="40" autocomplete="off"><button type="button" class="gback" data-gback="${i}" title="Back to the list">↩</button></div>`
           : `<select class="inp" data-k="type">${garments.map(p=>`<option ${p.name===it.type?"selected":""}>${esc(p.name)}</option>`).join("")}${garments.some(p=>p.name===it.type)||!it.type?"":`<option selected>${esc(it.type)}</option>`}<option value="__new">＋ New garment…</option></select>`}
-        <input class="inp" data-k="desc" value="${esc(it.desc)}" placeholder="Colour, brand…">
+        <div class="dcell">${colourSelect(it.color)}<input class="inp" data-k="desc" value="${esc(it.desc)}" placeholder="Brand, notes…"></div>
         <input class="inp" type="number" min="1" data-k="qty" value="${esc(it.qty)}">
         <input class="inp" type="number" min="0" data-k="price" value="${esc(it.price)}">
         <div class="lt" data-lt>${money0(lineTotal(it))}</div>
@@ -1364,6 +1387,7 @@ function bindOrderForm(){
   $("#items").addEventListener("click", e => { const t=e.target.closest("[data-tile]"); if(t){ readDraft(); addCarpetFromTile(t.dataset.tile); return; } const m=e.target.closest("[data-cmode]"); if(m){ readDraft(); draft._mode=m.dataset.cmode; renderItems(); return; } if(e.target.closest("[data-act=scan]")){ e.stopPropagation(); $("#scan-file").click(); } });
   $("#scan-file").onchange = e => { const f=e.target.files[0]; e.target.value=""; if(f){ readDraft(); scanPhoto(f); } };
   $("#items").addEventListener("change", e => { const s=e.target;
+    if(s.dataset.k==="color"){ const box=s.closest(".csel"); if(box){ const old=box.querySelector(".sw"); old.outerHTML = swatch(s.value)||'<i class="sw empty"></i>'; } }
     if(s.dataset.k==="type" && s.tagName==="SELECT"){
       const row=s.closest(".irow");
       if(s.value==="__new"){ readDraft(); const it=draft.items[+row.dataset.i]; it._new=true; it.type=""; it.price=""; renderItems(); updateSum(); const ni=$(`.irow[data-i="${row.dataset.i}"] [data-k=type]`); ni&&ni.focus(); return; }
@@ -1396,7 +1420,7 @@ function saveOrder(){
   const fresh = []; items.forEach(i=>{ if(i.kind==="cloth" && i._new && !known.has(i.type.toLowerCase())){ known.add(i.type.toLowerCase()); fresh.push({name:i.type, price:num(i.price)}); } });
   if(fresh.length && S.role==="admin" && !S.readOnly){ store.saveSettings({...S.settings, clothPrices:[...(S.settings.clothPrices||[]), ...fresh]}); }
   const o = structuredClone(draft); delete o._edit;
-  o.items = items.map(i => i.kind==="carpet" ? JSON.parse(JSON.stringify({kind:"carpet", ctype:i.ctype, label:i.label||"", desc:i.desc||"", size:i.size, name:i.name, metres:i.metres!==undefined?num(i.metres):undefined, length:i.length!==undefined?num(i.length):undefined, width:i.width!==undefined?num(i.width):undefined, rate:i.rate!==undefined?num(i.rate):undefined, price:basePrice(i), qty:Math.max(1,num(i.qty)||1), express:!!i.express, mult:i.express?num(i.mult||S.settings.expressMult||2):undefined})) : {kind:"cloth", type:i.type, desc:i.desc||"", qty:num(i.qty), price:num(i.price)});
+  o.items = items.map(i => i.kind==="carpet" ? JSON.parse(JSON.stringify({kind:"carpet", ctype:i.ctype, label:i.label||"", desc:i.desc||"", color:i.color||undefined, size:i.size, name:i.name, metres:i.metres!==undefined?num(i.metres):undefined, length:i.length!==undefined?num(i.length):undefined, width:i.width!==undefined?num(i.width):undefined, rate:i.rate!==undefined?num(i.rate):undefined, price:basePrice(i), qty:Math.max(1,num(i.qty)||1), express:!!i.express, mult:i.express?num(i.mult||S.settings.expressMult||2):undefined})) : {kind:"cloth", type:i.type, desc:i.desc||"", color:i.color||"", qty:num(i.qty), price:num(i.price)});
   delete o._mode;
   o.customerId = cust.id; o.customerName = cust.name; o.customerPhone = cust.phone||""; o.customerWa = cust.whatsapp||"";
   o.dateReceived = fm.dateReceived.value || today(); o.expected = fm.expected.value || o.dateReceived;
@@ -1552,7 +1576,7 @@ function carpetPicker(){
     const priceEditable = it.ctype==="carpet" || it.ctype==="service";
     return `<div class="crow irow" data-i="${i}">
       <input class="inp" data-k="label" value="${esc(it.label)}" title="Carpet ID" style="padding:6px">
-      <div>${it.ctype==="corridor"||it.ctype==="custom"?`<div class="small muted" style="margin-bottom:3px">${it.ctype==="corridor"?"Corridor":"Custom carpet"}</div>`:""}${sizeCell}</div>
+      <div>${it.ctype==="corridor"||it.ctype==="custom"?`<div class="small muted" style="margin-bottom:3px">${it.ctype==="corridor"?"Corridor":"Custom carpet"}</div>`:""}${sizeCell}<div style="margin-top:5px">${colourSelect(it.color)}</div></div>
       <input class="inp q" type="number" min="1" data-k="qty" value="${esc(it.qty)}" title="Number of pieces">
       <label class="xp"><input type="checkbox" data-k="express" ${it.express?"checked":""}> EXPRESS</label>
       <input class="inp pr2" type="number" min="0" data-k="price" value="${esc(priceEditable?it.price:basePrice(it))}" ${priceEditable?"":"disabled"} title="Price per piece (normal)">
@@ -1743,8 +1767,8 @@ async function invoicePdf(o, forSend=false){
     .forEach((r,i)=>{ pdf.text(r[0],320,y+i*13,{size:9.5,color:MUTED}); pdf.text(pdf.fit(r[1],170,9.5,true),389,y+i*13,{size:9.5,bold:true}); });
   pdf.y = y + 5*13 + 12;
   const rows = (o.items||[]).map(i=> i.kind==="carpet"
-    ? [`${i.label?i.label+"  ":""}${carpetName(i)}${i.desc?" - "+i.desc:""}`, i.express?"EXPRESS":"Normal", String(Math.max(1,num(i.qty)||1)), money0(i.ctype?basePrice(i)*(i.express?num(i.mult||2):1):carpetArea(i)*num(i.rate)), money0(lineTotal(i))]
-    : [`${i.type||"Item"}${i.desc?" - "+i.desc:""}`, "Normal", String(num(i.qty)), money0(i.price), money0(lineTotal(i))]);
+    ? [`${i.label?i.label+"  ":""}${carpetName(i)}${itemNote(i)?" - "+itemNote(i):""}`, i.express?"EXPRESS":"Normal", String(Math.max(1,num(i.qty)||1)), money0(i.ctype?basePrice(i)*(i.express?num(i.mult||2):1):carpetArea(i)*num(i.rate)), money0(lineTotal(i))]
+    : [`${i.type||"Item"}${itemNote(i)?" - "+itemNote(i):""}`, "Normal", String(num(i.qty)), money0(i.price), money0(lineTotal(i))]);
   pdfTable(pdf, [{t:"DESCRIPTION",w:243},{t:"SERVICE",w:70},{t:"QTY",w:45,align:"right"},{t:"UNIT (KSH)",w:80,align:"right"},{t:"AMOUNT (KSH)",w:85,align:"right"}], rows);
   pdf.ensure(170); y = pdf.y + 14;
   const tl = [["Subtotal", money(subtotal(o))]]; if(delFee(o)) tl.push(["Delivery fee", money(delFee(o))]); if(num(o.discount)) tl.push(["Discount", "- "+money(o.discount)]);
