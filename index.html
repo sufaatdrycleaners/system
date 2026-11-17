@@ -408,6 +408,16 @@ body:not(.role-admin) .oact [data-delorder]{display:none!important}
 .sw.empty{background:repeating-linear-gradient(45deg,#ddd 0 3px,#fff 3px 6px)}
 @media (max-width:980px){ .csel{flex:0 0 46%} }
 #modal3 .ov{z-index:60}
+.hero-ar{font-family:"Amiri","Noto Naskh Arabic","Traditional Arabic",serif;font-size:19px;color:var(--g2);line-height:1.5;text-align:inherit}
+.hero h1.hero-hi{font-size:30px;line-height:1.1;text-transform:none;letter-spacing:.01em}
+.hero h1.hero-hi span{color:var(--g2)}
+.hero-when{display:flex;flex-wrap:wrap;align-items:baseline;gap:6px 14px;margin-top:6px}
+.hero-clock{font-family:var(--head);font-size:26px;font-weight:800;color:var(--ink);font-variant-numeric:tabular-nums;letter-spacing:.02em}
+.hero-day{color:var(--muted);font-size:13.5px}
+@media (max-width:860px){ .hero-when{justify-content:center} .hero-day{flex-basis:100%} }
+@media (max-width:600px){ .hero h1.hero-hi{font-size:23px} .hero-clock{font-size:22px} .hero-ar{font-size:17px} }
+@media (max-width:860px){ .hero-logo{width:150px;max-width:45%} .hero{gap:6px} }
+@media (max-width:600px){ .hero-logo{width:110px} }
 </style>
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-auth-compat.js"></script>
@@ -678,12 +688,15 @@ const NAV = [
 function go(v){ if(location.hash!=="#"+v){ location.hash = v; } else { S.view=v; S.drawer=false; render(); } }
 window.addEventListener("hashchange", ()=>{ const h=location.hash.slice(1); S.view = NAV.some(n=>n[0]===h)?h:"dashboard"; if(S.role && !viewAllowed(S.view)) S.view = allowedViews()[0]; S.drawer=false; S.settingsDirty=false; S.themePreview=null; render(); window.scrollTo(0,0); });
 
+let RENDERED_VIEW = null;
 function render(){
   const root = $("#root");
   if(!S.user){ return; }
   if(S.role && !viewAllowed(S.view)) S.view = allowedViews()[0];
   if(!S.themePreview) applyTheme(S.settings.theme);
   if(S.view==="settings" && S.settingsDirty && $("#settings-form")) return; // don't wipe unsaved edits
+  const fresh = !$(".app", root) || RENDERED_VIEW !== S.view; RENDERED_VIEW = S.view;
+  if(fresh) requestAnimationFrame(()=>{ try{ window.scrollTo(0,0); const m=$("main"); if(m) m.scrollTop=0; }catch(_){} });
   const allLoaded = Object.values(S.loaded).every(Boolean);
   const activeCount = S.orders.filter(o=>!DONE.includes(o.status)).length;
   const pendDel = S.orders.filter(o=>o.delivery&&o.delivery.required&&o.delivery.status!=="Delivered").length;
@@ -718,6 +731,16 @@ const svc = s => `<span class="svc ${s}">${s==="carpet"?"Carpet":"Cloth"}</span>
 /* ---------------- views ---------------- */
 const VIEWS = {};
 
+function myName(){ const p=S.profile||{}; let n=(p.name||"").trim(); if(!n || /^admin$/i.test(n)) n = (S.user&&S.user.displayName) || ""; if(!n) n = (p.name||"").trim() || (ROLES[S.role]||""); return n.split(/\s+/).slice(0,2).join(" "); }
+const clockStr = () => new Date().toLocaleTimeString("en-GB",{hour:"2-digit",minute:"2-digit",second:"2-digit",hour12:true}).replace(/^0/,"").replace(/\s*(am|pm)$/i,(m,x)=>" "+x.toUpperCase());
+function dayStr(){
+  const d = new Date();
+  let s = d.toLocaleDateString("en-GB",{weekday:"long",day:"numeric",month:"long",year:"numeric"});
+  try{ const P = {}; new Intl.DateTimeFormat("en-u-ca-islamic-umalqura",{day:"numeric",month:"long",year:"numeric"}).formatToParts(d).forEach(x=>P[x.type]=x.value);
+    if(P.day && P.month && P.year) s += ` · ${P.day} ${P.month} ${String(P.year).replace(/\D/g,"")} AH`; }catch(_){}
+  return s;
+}
+setInterval(()=>{ const c=document.getElementById("hero-clock"); if(!c) return; c.textContent=clockStr(); const d=document.getElementById("hero-day"); const n=dayStr(); if(d && d.textContent!==n) d.textContent=n; }, 1000);
 VIEWS.dashboard = () => {
   const O = S.orders, t = today();
   const pending = O.filter(o=>PENDING.includes(o.status));
@@ -731,11 +754,11 @@ VIEWS.dashboard = () => {
   const recent = [...O].sort((a,b)=>(b.createdAt||0)-(a.createdAt||0)).slice(0,8);
   const dueToday = O.filter(o=>!DONE.includes(o.status) && o.expected===t);
   const k = (l,v,d,col,go) => `<div class="kpi ${go?"click":""}" ${go?`data-go="${go}"`:""}><div class="l">${col?`<span class="dot" style="background:${col}"></span>`:""}${l}</div><div class="v">${v}</div>${d?`<div class="d">${d}</div>`:""}</div>`;
-  const dstr = new Date().toLocaleDateString("en-GB",{weekday:"long",day:"numeric",month:"long",year:"numeric"});
-  const hr = new Date().getHours(); const greet = hr<12?"Good morning":hr<17?"Good afternoon":"Good evening";
+  const who = myName();
   return `<div class="hero">
     <img class="hero-logo" src="${LOGO_LIGHT}" alt="${esc(S.settings.businessName)}">
-    <div class="hero-txt"><div class="hero-k">${greet}</div><h1>Dashboard</h1><div class="hero-d">${dstr}</div>${S.settings.phone||S.settings.address?`<div class="hero-c">${S.settings.phone?`☎ ${esc(S.settings.phone)}`:""}${S.settings.phone&&S.settings.address?" &nbsp;·&nbsp; ":""}${S.settings.address?`📍 ${esc(S.settings.address)}`:""}</div>`:""}
+    <div class="hero-txt"><div class="hero-ar" dir="rtl" lang="ar">السَّلَامُ عَلَيْكُمْ وَرَحْمَةُ اللهِ وَبَرَكَاتُهُ</div><h1 class="hero-hi">Assalāmu ʿalaykum${who?`, <span>${esc(who)}</span>`:""}</h1>
+      <div class="hero-when"><span class="hero-clock" id="hero-clock">${clockStr()}</span><span class="hero-day" id="hero-day">${dayStr()}</span></div>${S.settings.phone||S.settings.address?`<div class="hero-c">${S.settings.phone?`☎ ${esc(S.settings.phone)}`:""}${S.settings.phone&&S.settings.address?" &nbsp;·&nbsp; ":""}${S.settings.address?`📍 ${esc(S.settings.address)}`:""}</div>`:""}
       <div class="hero-stats"><span><b>${pending.length}</b> in process</span><span><b>${ready.length}</b> ready</span><span><b>${money(todaySales)}</b> today</span></div></div>
     <div class="hero-act">${S.readOnly?"":`<button class="btn hero-btn" data-act="new-order">${ic("plus")} New order</button>`}${bellHtml()}</div>
     <svg class="hero-bub" viewBox="0 0 200 200" aria-hidden="true"><g fill="none" stroke="currentColor" stroke-width="3"><circle cx="60" cy="120" r="44"/><circle cx="130" cy="60" r="26"/><circle cx="150" cy="140" r="32"/><circle cx="175" cy="95" r="14"/></g></svg>
