@@ -255,7 +255,7 @@ body.role-driver [data-act=new-order], body.role-driver [data-editorder], body.r
 .lg-head{display:flex;align-items:center;gap:12px;color:#4b5d55;font-size:15px}.lg-head img{width:46px;height:46px;object-fit:contain;border:1px solid #e3e8e5;border-radius:12px;padding:4px}
 .lg-card h1{font-family:Georgia,"Times New Roman",serif;font-size:38px;margin:22px 0 6px;color:#10201a}
 .lg-p{color:#5d6f68;margin:0 0 22px;font-size:15.5px}
-.lg-tabs{display:grid;grid-template-columns:repeat(3,1fr);border-bottom:1px solid #e3e8e5;margin-bottom:22px}
+.lg-tabs{display:grid;grid-auto-flow:column;grid-auto-columns:1fr;border-bottom:1px solid #e3e8e5;margin-bottom:22px}
 .lg-tabs button{border:0;background:none;padding:12px 4px;font-weight:600;font-size:15px;color:#5d6f68;cursor:pointer;border-bottom:3px solid transparent;margin-bottom:-1px}
 .lg-tabs button.on{color:var(--g1);border-bottom-color:var(--g1)}
 .lg-l{display:grid;gap:8px;font-weight:600;font-size:14.5px;color:#22332c;margin-bottom:16px}
@@ -507,7 +507,9 @@ const store = {
     if(S.readOnly){ showToast("View-only access — not saved."); return Promise.resolve(); }
     S.settings = JSON.parse(JSON.stringify(st)); render();
     if(S.mode!=="db") return Promise.resolve();
-    return queueWrite("config/settings", ()=>DB.doc("config/settings").set(S.settings));
+    const w = queueWrite("config/settings", ()=>DB.doc("config/settings").set(S.settings));
+    if(S.role==="admin") queueWrite("public/site", ()=>DB.doc("public/site").set(publicSite(S.settings)));
+    return w;
   }
 };
 
@@ -905,7 +907,7 @@ VIEWS.settings = () => {
         <div class="sec-t">Other services</div>
         <div id="svc-rows" style="display:grid;gap:8px">${(st.extraServices||[]).map(c=>`<div class="split sr"><input class="inp" data-sn value="${esc(c.name)}" placeholder="Service" ${ro}><input class="inp" type="number" min="0" data-sp value="${esc(c.price)}" style="max-width:120px" ${ro}>${ro?"":`<button class="btn sm ghost" data-act="rm-row">✕</button>`}</div>`).join("")}</div>
         ${ro?"":`<button class="btn sm" style="margin-top:8px" data-act="add-svc">${ic("plus",14)} Add service</button>`}
-        <div class="hint" style="margin-top:8px">These appear as tap-to-add tiles on carpet orders. Express doubles the price (×${esc(st.expressMult)}).</div>
+        <div class="hint" style="margin-top:8px">Saving also updates the prices and contact details on <b>sufaat.co.ke</b>. These appear as tap-to-add tiles on carpet orders. Express doubles the price (×${esc(st.expressMult)}).</div>
       </div></div>
       <div class="card"><div class="card-h"><h2>Drivers</h2></div><div class="card-b">
         <textarea class="inp" name="drivers" rows="4" placeholder="One driver per line" ${ro}>${esc((st.drivers||[]).join("\n"))}</textarea>
@@ -1935,16 +1937,15 @@ const FIREBASE_CONFIG = {
   appId: "1:833715985898:web:664f308aa7ebea9d50e693"
 };
 const ADMIN_EMAILS = ["sufaatdrycleaners@gmail.com"];
-const ROLES = {admin:"Admin", staff:"Staff", driver:"Driver"};
+const ROLES = {admin:"Admin", staff:"Staff"};
 const ROLE_VIEWS = {
   admin: null,
-  staff: ["dashboard","customers","orders","cloth","carpet","payments","delivery"],
-  driver: ["delivery"]
+  staff: ["dashboard","customers","orders","cloth","carpet","payments","delivery"]
 };
 let AUTH = null, UNSUBS = [];
 const LOGIN = { tab:"staff", error:"", info:"", busy:false };
 const isAdmin = () => S.role==="admin";
-function allowedViews(){ const r = ROLE_VIEWS[S.role]; return r ? r : [...NAV.map(n=>n[0])]; }
+function allowedViews(){ if(S.role==="admin") return NAV.map(n=>n[0]); return ROLE_VIEWS[S.role] || []; }
 function viewAllowed(v){ return allowedViews().includes(v); }
 
 function startApp(){
@@ -1972,13 +1973,14 @@ async function onAuth(u){
     await AUTH.signOut(); return;
   }
   S.role = ADMIN_EMAILS.includes(email) ? "admin" : (p.role||"staff");
+  if(!ROLES[S.role]){ S.role=null; LOGIN.error = "This account type is no longer used. Ask the admin to set it to Staff."; await AUTH.signOut(); return; }
   S.profile = {...p, uid:u.uid, email};
   document.body.className = "role-"+S.role;
   if(!viewAllowed(S.view)) S.view = allowedViews()[0];
   subscribeData();
 }
 function subscribeData(){
-  const cols = S.role==="admin" ? ["customers","orders","expenses","fin","users"] : S.role==="staff" ? ["customers","orders"] : ["orders"];
+  const cols = S.role==="admin" ? ["customers","orders","expenses","fin","users"] : ["customers","orders"];
   S.loaded = {customers:false,orders:false,expenses:false,fin:false,users:false,settings:false};
   Object.keys(S.loaded).forEach(k=>{ if(k!=="settings" && !cols.includes(k)) S.loaded[k]=true; });
   S.mode = "db"; S.stale = false;
@@ -1995,6 +1997,7 @@ function subscribeData(){
   });
   UNSUBS.push(DB.doc("config/settings").onSnapshot(snap=>{
     if(snap.exists){ S.settings = {...structuredClone(DEFAULT_SETTINGS), ...structuredClone(snap.data())}; }
+    if(S.role==="admin" && !snap.metadata.fromCache && !S._pubSynced){ S._pubSynced = true; DB.doc("public/site").set(publicSite(S.settings)).catch(e=>console.warn("public sync", e)); }
     if(!snap.metadata.fromCache || snap.exists){ S.loaded.settings=true; done(); }
     render();
   }, onErr("settings")));
@@ -2002,6 +2005,17 @@ function subscribeData(){
 }
 function renderLoading(){ $("#root").innerHTML = `<div class="loading"><div><div class="spin"></div>Signing you in…</div></div>`; }
 
+/* ---- public price list for the website (no private data) ---- */
+function publicSite(st){
+  return JSON.parse(JSON.stringify({
+    businessName: st.businessName||"", phone: st.phone||"", address: st.address||"", postal: st.postal||"",
+    carpetSizes: (st.carpetSizes||[]).map(c=>({size:String(c.size||""), price:num(c.price)})),
+    corridorRate: num(st.corridorRate), expressMult: num(st.expressMult)||2,
+    extraServices: (st.extraServices||[]).map(x=>({name:String(x.name||""), price:num(x.price)})),
+    clothPrices: (st.clothPrices||[]).map(x=>({name:String(x.name||""), price:num(x.price)})),
+    updatedAt: Date.now()
+  }));
+}
 /* ---- login page ---- */
 function renderLogin(){
   closeModal("#modal"); closeModal("#modal2");
@@ -2080,7 +2094,6 @@ VIEWS.users = () => {
   <div class="card" style="margin-top:14px"><div class="card-b small">
     <b>Admin</b>: everything, including Finance, Reports, Settings and staff accounts.<br>
     <b>Staff</b>: dashboard, customers, orders, cloth &amp; carpet boards, payments and delivery.<br>
-    <b>Driver</b>: deliveries only — mark delivered and record cash on delivery.<br>
     <span class="muted">Switching an account off blocks it immediately. To remove someone completely, also delete them in Firebase → Authentication → Users.</span>
   </div></div>`;
 };
