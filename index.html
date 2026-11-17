@@ -398,11 +398,16 @@ a.btn{text-decoration:none}
 .oact.m{display:flex;gap:8px;justify-content:flex-end;margin-top:8px}.oact.m .btn{margin:0}
 body:not(.role-admin) .oact [data-delorder]{display:none!important}
 .dcell{display:flex;gap:6px;min-width:0}.dcell .inp{min-width:0}.dcell>.inp{flex:1}
-.csel{position:relative;flex:0 0 132px;min-width:0}.csel select{padding-left:28px;width:100%}
-.csel .sw{position:absolute;left:9px;top:50%;transform:translateY(-50%);pointer-events:none}
+.csel{flex:0 0 140px;min-width:0}
+.cbtn{display:flex;align-items:center;gap:7px;width:100%;text-align:left;cursor:pointer;white-space:nowrap;overflow:hidden}
+.cbtn span{flex:1;overflow:hidden;text-overflow:ellipsis}.cbtn .sw{margin:0;width:16px;height:16px}.cbtn .caret{font-weight:400;color:var(--muted);font-size:11px}
+.cgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:8px}
+.cchip{display:flex;align-items:center;gap:10px;padding:10px 12px;border:1px solid var(--line);border-radius:12px;background:#fff;cursor:pointer;font:inherit;font-size:14px;text-align:left;color:var(--ink)}
+.cchip .sw{width:26px;height:26px;margin:0}.cchip:hover{border-color:var(--g2)}.cchip.on{border:2px solid var(--g1);background:var(--brand-soft)}
 .sw{display:inline-block;width:14px;height:14px;border-radius:50%;border:1px solid rgba(0,0,0,.25);vertical-align:-2px;margin-right:5px;flex:none}
 .sw.empty{background:repeating-linear-gradient(45deg,#ddd 0 3px,#fff 3px 6px)}
 @media (max-width:980px){ .csel{flex:0 0 46%} }
+#modal3 .ov{z-index:60}
 </style>
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-auth-compat.js"></script>
@@ -412,6 +417,7 @@ body:not(.role-admin) .oact [data-delorder]{display:none!important}
 <div id="root"><div class="loading"><div><div class="spin"></div>Loading…</div></div></div>
 <div id="modal"></div>
 <div id="modal2"></div>
+<div id="modal3"></div>
 <div id="toast"></div>
 <script>
 "use strict";
@@ -519,7 +525,18 @@ const colourHex = n => { const c = COLOURS.find(x=>x[0]===n); return c ? c[1] : 
 function swatch(n){ if(!n) return ""; const h = colourHex(n);
   return `<i class="sw" style="background:${h || "conic-gradient(#e53935,#fbc02d,#43a047,#1e88e5,#8e24aa,#e53935)"}"></i>`; }
 function colourSelect(v){
-  return `<div class="csel">${swatch(v)||'<i class="sw empty"></i>'}<select class="inp" data-k="color" title="Colour"><option value="">Colour…</option>${COLOURS.map(([n])=>`<option ${n===v?"selected":""}>${n}</option>`).join("")}${v&&!colourHex(v)&&!COLOURS.some(c=>c[0]===v)?`<option selected>${esc(v)}</option>`:""}</select></div>`;
+  return `<div class="csel"><input type="hidden" data-k="color" value="${esc(v||"")}"><button type="button" class="inp cbtn" data-cpick title="Choose colour">${swatch(v)||'<i class="sw empty"></i>'}<span>${esc(v||"Colour…")}</span><b class="caret">▾</b></button></div>`;
+}
+function openColourPicker(btn){
+  const box = btn.closest(".csel"), hid = $("input[data-k=color]", box), cur = hid.value;
+  openModal(`<div class="md-h"><h2>Choose colour</h2><div class="sp"></div><button class="closeb" data-close2>×</button></div>
+  <div class="md-b"><div class="cgrid">${COLOURS.map(([n])=>`<button type="button" class="cchip ${n===cur?"on":""}" data-cval="${esc(n)}">${swatch(n)}<span>${esc(n)}</span></button>`).join("")}</div></div>
+  <div class="md-f"><button type="button" class="btn" data-cval="">No colour</button><button type="button" class="btn" data-cclose>Cancel</button></div>`.replace('class="closeb" data-close2','class="closeb" data-cclose'), true, "#modal3");
+  $("#modal3").onclick = e => { e.stopPropagation();
+    if(e.target.closest("[data-cclose]") || (e.target.classList && e.target.classList.contains("ov"))){ closeModal("#modal3"); return; }
+    const c = e.target.closest("[data-cval]"); if(!c) return;
+    hid.value = c.dataset.cval; btn.innerHTML = `${swatch(hid.value)||'<i class="sw empty"></i>'}<span>${esc(hid.value||"Colour…")}</span><b class="caret">▾</b>`;
+    closeModal("#modal3"); readDraft(); updateSum(); };
 }
 const itemNote = i => [i.color, i.desc].filter(x=>String(x||"").trim()).join(" · ");
 const TILE_COLORS = ["#33691e","#8d6e63","#f4511e","#c2185b","#004d40","#7b1fa2","#5d4037","#01579b","#455a64","#ef6c00","#2e7d32","#6a1b9a"];
@@ -1059,7 +1076,7 @@ function openModal(html, narrow=false, layer="#modal"){
 }
 function closeModal(layer="#modal"){
   $(layer).innerHTML=""; if(layer==="#modal") S.modal=null;
-  if(!$("#modal").innerHTML && !$("#modal2").innerHTML) document.body.style.overflow="";
+  if(!$("#modal").innerHTML && !$("#modal2").innerHTML && !($("#modal3")&&$("#modal3").innerHTML)) document.body.style.overflow="";
 }
 function confirmBox(msg, okLabel="Delete"){
   return new Promise(res=>{
@@ -1386,8 +1403,8 @@ function bindOrderForm(){
   $("#items").addEventListener("click", e => { const b=e.target.closest("[data-rm]"); if(!b) return; readDraft(); draft.items.splice(+b.dataset.rm,1); if(!draft.items.length && draft.service==="cloth") draft.items.push(blankItem("cloth")); renderItems(); updateSum(); });
   $("#items").addEventListener("click", e => { const t=e.target.closest("[data-tile]"); if(t){ readDraft(); addCarpetFromTile(t.dataset.tile); return; } const m=e.target.closest("[data-cmode]"); if(m){ readDraft(); draft._mode=m.dataset.cmode; renderItems(); return; } if(e.target.closest("[data-act=scan]")){ e.stopPropagation(); $("#scan-file").click(); } });
   $("#scan-file").onchange = e => { const f=e.target.files[0]; e.target.value=""; if(f){ readDraft(); scanPhoto(f); } };
+  $("#items").addEventListener("click", e => { const b=e.target.closest("[data-cpick]"); if(b){ e.preventDefault(); e.stopPropagation(); openColourPicker(b); } });
   $("#items").addEventListener("change", e => { const s=e.target;
-    if(s.dataset.k==="color"){ const box=s.closest(".csel"); if(box){ const old=box.querySelector(".sw"); old.outerHTML = swatch(s.value)||'<i class="sw empty"></i>'; } }
     if(s.dataset.k==="type" && s.tagName==="SELECT"){
       const row=s.closest(".irow");
       if(s.value==="__new"){ readDraft(); const it=draft.items[+row.dataset.i]; it._new=true; it.type=""; it.price=""; renderItems(); updateSum(); const ni=$(`.irow[data-i="${row.dataset.i}"] [data-k=type]`); ni&&ni.focus(); return; }
