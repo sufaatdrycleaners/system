@@ -419,6 +419,8 @@ body:not(.role-admin) .oact [data-delorder]{display:none!important}
 @media (max-width:860px){ .hero-logo{width:150px;max-width:45%} .hero{gap:6px} }
 @media (max-width:600px){ .hero-logo{width:110px} }
 .lg-mask{-webkit-text-security:disc;text-security:disc;letter-spacing:.1em}
+.livedot{display:inline-block;width:9px;height:9px;border-radius:50%;background:#22a45d;box-shadow:0 0 0 0 rgba(34,164,93,.6);animation:livep 1.8s infinite;vertical-align:1px;margin-right:4px}
+@keyframes livep{0%{box-shadow:0 0 0 0 rgba(34,164,93,.55)}70%{box-shadow:0 0 0 8px rgba(34,164,93,0)}100%{box-shadow:0 0 0 0 rgba(34,164,93,0)}}
 </style>
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-auth-compat.js"></script>
@@ -495,6 +497,7 @@ const today = () => isoDate();
 function waPhone(p){ let d=String(p||"").replace(/\D/g,""); if(!d) return ""; if(d.startsWith("0")) d="254"+d.slice(1); else if(d.length===9 && /^[17]/.test(d)) d="254"+d; return d; }
 
 const ICONS = {
+  pulse:'<path d="M3 12h4l3-8 4 16 3-8h4"/>',
   dash:'<path d="M3 13h8V3H3zM13 21h8V11h-8zM3 21h8v-6H3zM13 3v6h8V3z"/>',
   users:'<path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75"/>',
   orders:'<path d="M9 5H7a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2h-2"/><rect x="9" y="3" width="6" height="4" rx="1"/><path d="M9 12h6M9 16h4"/>',
@@ -684,7 +687,7 @@ const orderById = id => S.orders.find(o=>o.id===id);
 const NAV = [
   ["dashboard","Dashboard","dash"],["customers","Customers","users"],["orders","Orders","orders"],
   ["cloth","Cloth Cleaning","cloth"],["carpet","Carpet Cleaning","carpet"],["payments","Payments","pay"],["finance","Finance","wallet"],
-  ["delivery","Delivery","truck"],["reports","Reports","chart"],["users","Staff accounts","users"],["settings","Settings","gear"]
+  ["delivery","Delivery","truck"],["reports","Reports","chart"],["users","Staff accounts","users"],["live","Live sessions","pulse"],["settings","Settings","gear"]
 ];
 function go(v){ if(location.hash!=="#"+v){ location.hash = v; } else { S.view=v; S.drawer=false; render(); } }
 window.addEventListener("hashchange", ()=>{ const h=location.hash.slice(1); S.view = NAV.some(n=>n[0]===h)?h:"dashboard"; if(S.role && !viewAllowed(S.view)) S.view = allowedViews()[0]; S.drawer=false; S.settingsDirty=false; S.themePreview=null; render(); window.scrollTo(0,0); });
@@ -698,7 +701,7 @@ function render(){
   if(S.role && !viewAllowed(S.view)) S.view = allowedViews()[0];
   if(!S.themePreview) applyTheme(S.settings.theme);
   if(S.view==="settings" && S.settingsDirty && $("#settings-form")) return; // don't wipe unsaved edits
-  const fresh = !$(".app", root) || RENDERED_VIEW !== S.view; RENDERED_VIEW = S.view;
+  const fresh = !$(".app", root) || RENDERED_VIEW !== S.view; RENDERED_VIEW = S.view; liveViewChanged();
   if(fresh) requestAnimationFrame(()=>{ try{ window.scrollTo(0,0); const m=$("main"); if(m) m.scrollTop=0; }catch(_){} });
   const allLoaded = Object.values(S.loaded).every(Boolean);
   const activeCount = S.orders.filter(o=>!DONE.includes(o.status)).length;
@@ -2174,7 +2177,8 @@ const ROLE_VIEWS = {
 let AUTH = null, UNSUBS = [];
 const LOGIN = { tab:"staff", error:"", info:"", busy:false };
 const isAdmin = () => S.role==="admin";
-function allowedViews(){ if(S.role==="admin") return NAV.map(n=>n[0]); return ROLE_VIEWS[S.role] || []; }
+const isOwnerUser = () => !!(S.user && ADMIN_EMAILS.includes((S.user.email||"").toLowerCase()));
+function allowedViews(){ if(S.role==="admin") return NAV.map(n=>n[0]).filter(v=>v!=="live" || isOwnerUser()); return ROLE_VIEWS[S.role] || []; }
 function viewAllowed(v){ return allowedViews().includes(v); }
 
 function startApp(){
@@ -2199,9 +2203,44 @@ function idleBanner(secs){
   if(!b){ b = document.createElement("div"); b.id = "idle-warn"; document.body.appendChild(b); }
   b.innerHTML = `<b>Still there?</b> You'll be signed out in ${secs}s. Tap anywhere to stay signed in.`;
 }
+/* ---- live sessions: every signed-in tab reports itself; only the owner can see the list ---- */
+const LIVE_BEAT = 60*1000, LIVE_ONLINE = 150*1000;
+let LIVE = { id:null, timer:null, unsub:null, view:null };
+function liveTabId(){ let id=null; try{ id=sessionStorage.getItem("sufaat_tab"); }catch(_){}
+  if(!id){ id = Math.random().toString(36).slice(2,10); try{ sessionStorage.setItem("sufaat_tab", id); }catch(_){} } return id; }
+function deviceName(){
+  const u = navigator.userAgent || "";
+  const os = /iPad|Macintosh.*Mobile|Macintosh(?=.*Safari)(?!.*Chrome)/.test(u) && navigator.maxTouchPoints>1 ? "iPad" : /iPhone/.test(u) ? "iPhone" : /Android/.test(u) ? (/Mobile/.test(u)?"Android phone":"Android tablet") : /Windows/.test(u) ? "Windows computer" : /Mac OS X|Macintosh/.test(u) ? "Mac" : /CrOS/.test(u) ? "Chromebook" : /Linux/.test(u) ? "Linux computer" : "Device";
+  const br = /Edg\//.test(u) ? "Edge" : /SamsungBrowser/.test(u) ? "Samsung Internet" : /OPR\//.test(u) ? "Opera" : /Firefox|FxiOS/.test(u) ? "Firefox" : /Chrome|CriOS/.test(u) ? "Chrome" : /Safari/.test(u) ? "Safari" : "browser";
+  const app = (matchMedia && matchMedia("(display-mode: standalone)").matches) || navigator.standalone ? " (app)" : "";
+  return `${br}${app} on ${os}`;
+}
+function liveDoc(){ return LIVE.id ? DB.doc("sessions/"+LIVE.id) : null; }
+function liveBeat(force){
+  const d = liveDoc(); if(!d || !S.user || !S.profile) return;
+  const data = {uid:S.user.uid, name:S.profile.name||"", email:(S.user.email||"").toLowerCase(), role:S.role||"", device:deviceName(),
+    view:S.view||"", since:LIVE.since, lastSeen:Date.now(), kick:false};
+  return d.set(data).catch(e=>console.warn("live", e));
+}
+function liveStart(){
+  liveStop(); if(!S.user) return;
+  LIVE.id = S.user.uid + "_" + liveTabId(); LIVE.since = Date.now(); LIVE.view = S.view;
+  const id = LIVE.id; LIVE.timer = setInterval(liveBeat, LIVE_BEAT);
+  Promise.resolve(liveBeat()).then(()=>{ if(LIVE.id!==id) return;
+    try{ LIVE.unsub = liveDoc().onSnapshot(snap => { if(snap.exists && snap.data().kick){ kickedOut(); } }, ()=>{}); }catch(_){} });
+}
+function liveStop(){ if(LIVE.timer) clearInterval(LIVE.timer); LIVE.timer=null; if(LIVE.unsub){ try{ LIVE.unsub(); }catch(_){} } LIVE.unsub=null; }
+async function liveEnd(){ const d = liveDoc(); liveStop(); LIVE.id=null; if(d){ try{ await d.delete(); }catch(_){} } }
+async function kickedOut(){ LOGIN.email=""; LOGIN.error=""; LOGIN.info="The owner signed you out of this device."; await liveEnd(); try{ await AUTH.signOut(); }catch(_){ location.reload(); } }
+window.addEventListener("pagehide", () => { const d = liveDoc(); if(d){ try{ d.delete(); }catch(_){} } });
+function liveViewChanged(){ if(LIVE.id && LIVE.view !== S.view){ LIVE.view = S.view; liveBeat(); } }
+function timeAgo(t){ const s=Math.max(0,Math.round((Date.now()-t)/1000)); if(s<60) return "just now"; const m=Math.round(s/60); if(m<60) return m+" min ago"; const h=Math.round(m/60); if(h<24) return h+" h ago"; return Math.round(h/24)+" d ago"; }
+function liveDuration(t){ const m=Math.max(0,Math.round((Date.now()-t)/60000)); return m<60 ? `${m} min` : `${Math.floor(m/60)} h ${m%60} min`; }
+
 async function idleSignOut(){
   if(IDLE_OUT || !S.user) return; IDLE_OUT = true; idleStop();
   LOGIN.email = ""; LOGIN.error = ""; LOGIN.info = "You were signed out after 5 minutes without activity. Sign in again to continue.";
+  await liveEnd();
   try{ await AUTH.signOut(); }catch(_){ location.reload(); }
 }
 function idleCheck(){
@@ -2223,7 +2262,7 @@ document.addEventListener("visibilitychange", () => { if(!document.hidden) idleC
 async function onAuth(u){
   if(u && LOGIN.signingUp) return;
   UNSUBS.forEach(f=>{ try{ f(); }catch(_){} }); UNSUBS = [];
-  if(!u){ idleStop(); LOGIN.busy=false; S.user=null; S.role=null; S.profile=null; S.mode="loading"; document.body.className=""; renderLogin(); return; }
+  if(!u){ idleStop(); liveStop(); LIVE.id=null; S.sessions=[]; LOGIN.busy=false; S.user=null; S.role=null; S.profile=null; S.mode="loading"; document.body.className=""; renderLogin(); return; }
   if(idleLast() && Date.now() - idleLast() >= IDLE_MS && !LOGIN.justSignedIn){ S.user = u; await idleSignOut(); return; }
   LOGIN.justSignedIn = false; idleMark();
   S.user = u; S.mode = "loading"; renderLoading(); idleStart();
@@ -2252,7 +2291,7 @@ async function onAuth(u){
   S.profile = {...p, uid:u.uid, email};
   document.body.className = "role-"+S.role;
   if(!viewAllowed(S.view)) S.view = allowedViews()[0];
-  subscribeData();
+  subscribeData(); liveStart();
 }
 function subscribeData(){
   const cols = S.role==="admin" ? ["customers","orders","expenses","fin","users"] : ["customers","orders"];
@@ -2270,6 +2309,15 @@ function subscribeData(){
       render(); refreshModal();
     }, onErr(col)));
   });
+  if(isOwnerUser()){
+    UNSUBS.push(DB.collection("sessions").onSnapshot(snap=>{
+      S.sessions = snap.docs.filter(d=>d.exists).map(d=>({...structuredClone(d.data()), id:d.id}));
+      // tidy: forget sessions not seen for 7 days
+      S.sessions.filter(x=>Date.now()-(x.lastSeen||0) > 7*864e5).forEach(x=>DB.doc("sessions/"+x.id).delete().catch(()=>{}));
+      if(S.view==="live") render();
+    }, e=>console.warn("sessions", e)));
+    clearInterval(S._liveTick); S._liveTick = setInterval(()=>{ if(S.view==="live" && S.user && !document.querySelector(".ov")) render(); }, 30000);
+  }
   UNSUBS.push(DB.doc("config/settings").onSnapshot(snap=>{
     if(snap.exists){ S.settings = {...structuredClone(DEFAULT_SETTINGS), ...structuredClone(snap.data())}; }
     if(S.role==="admin" && !snap.metadata.fromCache && !S._pubSynced){ S._pubSynced = true; DB.doc("public/site").set(publicSite(S.settings)).catch(e=>console.warn("public sync", e)); }
@@ -2395,7 +2443,7 @@ async function forgotPassword(){
   catch(err){ LOGIN.error = /invalid-email/.test(err.code||"") ? "That email address doesn't look right." : "Couldn't send the reset email. Try again."; }
   renderLogin();
 }
-async function signOut(){ if(await confirmBox("Sign out of the system?","Sign out")){ LOGIN.email=""; LOGIN.error=""; LOGIN.info="You've signed out. Enter your email and password to sign in again."; await AUTH.signOut(); } }
+async function signOut(){ if(await confirmBox("Sign out of the system?","Sign out")){ LOGIN.email=""; LOGIN.error=""; LOGIN.info="You've signed out. Enter your email and password to sign in again."; await liveEnd(); await AUTH.signOut(); } }
 /* browsers love to re-fill saved passwords; empty anything they fill in before the person types */
 function blockAutofill(form){
   if(!form) return; let touched = false;
@@ -2406,6 +2454,31 @@ function blockAutofill(form){
 }
 
 /* ---- staff accounts (admin) ---- */
+VIEWS.live = () => {
+  if(!isOwnerUser()) return `<div class="card card-b">Only the owner can see this page.</div>`;
+  const all = [...(S.sessions||[])].sort((a,b)=>(b.lastSeen||0)-(a.lastSeen||0));
+  const on = all.filter(x=>Date.now()-(x.lastSeen||0) <= LIVE_ONLINE && !x.kick);
+  const recent = all.filter(x=>!on.includes(x));
+  const pageName = v => (NAV.find(n=>n[0]===v)||[,v||"—"])[1];
+  const row = (x, live) => `<tr>
+    <td><b>${esc(x.name||x.email||"—")}</b>${x.id===LIVE.id?` <span class="chip s-Ready">This device</span>`:""}<div class="muted small">${esc(x.email||"")} · ${ROLES[x.role]||esc(x.role||"")}</div></td>
+    <td>${esc(x.device||"—")}</td>
+    <td>${live?esc(pageName(x.view)):"—"}</td>
+    <td>${x.since?new Date(x.since).toLocaleTimeString("en-GB",{hour:"2-digit",minute:"2-digit"}):"—"}${live&&x.since?`<div class="muted small">${liveDuration(x.since)}</div>`:""}</td>
+    <td>${live?`<span class="livedot"></span> Online`:`<span class="muted">Last seen ${timeAgo(x.lastSeen||0)}</span>`}</td>
+    <td class="num">${live && x.id!==LIVE.id?`<button class="btn sm danger" data-kick="${x.id}">Sign out</button>`:""}</td></tr>`;
+  const mcard = (x, live) => `<div class="mitem" style="cursor:default"><div class="a"><span>${esc(x.name||x.email||"—")}${x.id===LIVE.id?` <span class="chip s-Ready">This device</span>`:""}</span><span>${live?`<span class="livedot"></span><span class="small">Online</span>`:`<span class="muted small">${timeAgo(x.lastSeen||0)}</span>`}</span></div>
+    <div class="b"><span>${esc(x.device||"—")}</span><span>${ROLES[x.role]||""}</span></div>
+    <div class="b"><span>${live?`On: ${esc(pageName(x.view))} · `:""}Signed in ${x.since?new Date(x.since).toLocaleTimeString("en-GB",{hour:"2-digit",minute:"2-digit"}):"—"}${live&&x.since?` (${liveDuration(x.since)})`:""}</span>${live && x.id!==LIVE.id?`<button class="btn sm danger" data-kick="${x.id}">Sign out</button>`:""}</div></div>`;
+  const table = (list, live) => list.length ? `<div class="list-m">${list.map(x=>mcard(x,live)).join("")}</div><div class="tbl-wrap" style="overflow-x:auto"><table><thead><tr><th>Person</th><th>Device</th><th>On page</th><th>Signed in</th><th>Status</th><th></th></tr></thead><tbody>${list.map(x=>row(x,live)).join("")}</tbody></table></div>` : `<div class="card-b muted">${live?"Nobody else is signed in right now.":"No recent sessions."}</div>`;
+  return topbar("Live sessions", "Who is signed in right now — visible to the owner only") + `<div class="kpis" style="margin-bottom:14px">
+      <div class="kpi"><div class="l">Online now</div><div class="v">${on.length}</div><div class="s">people / devices</div></div>
+      <div class="kpi"><div class="l">Staff online</div><div class="v">${new Set(on.filter(x=>x.role!=="admin").map(x=>x.uid)).size}</div><div class="s">signed in now</div></div>
+      <div class="kpi"><div class="l">Seen today</div><div class="v">${new Set(all.filter(x=>new Date(x.lastSeen||0).toDateString()===new Date().toDateString()).map(x=>x.uid)).size}</div><div class="s">different people</div></div></div>
+    <div class="card" style="margin-bottom:14px"><div class="card-h"><h2><span class="livedot"></span> Online now</h2></div>${table(on,true)}</div>
+    <div class="card"><div class="card-h"><h2>Recently signed out</h2></div>${table(recent,false)}
+      <div class="card-b small muted">Only you (the owner) can see this page. It updates by itself. "Sign out" ends that person's session on that device straight away.</div></div>`;
+};
 VIEWS.users = () => {
   const pending = (S.users||[]).filter(u=>u.pending).sort((a,b)=>(b.createdAt||0)-(a.createdAt||0));
   const pend = pending.length ? `<div class="card" style="margin-bottom:14px;border:1px solid #e9c46a"><div class="card-h"><h2>Waiting for approval (${pending.length})</h2></div>
@@ -2546,6 +2619,7 @@ document.addEventListener("click", async e => {
   const ur = t.closest("[data-ureset]"); if(ur){ try{ await AUTH.sendPasswordResetEmail(ur.dataset.ureset); showToast("Password reset email sent to "+ur.dataset.ureset); }catch(_){ showToast("Couldn't send the reset email"); } return; }
   const uap = t.closest("[data-uapprove]"); if(uap){ const u=S.users.find(x=>x.id===uap.dataset.uapprove); if(u){ store.put("users",{...structuredClone(u), role:"staff", active:true, pending:false, rejected:false, approvedAt:Date.now(), approvedBy:S.profile.email}); showToast(`${u.name||u.email} approved`); } return; }
   const urj = t.closest("[data-ureject]"); if(urj){ const u=S.users.find(x=>x.id===urj.dataset.ureject); if(u && await confirmBox(`Reject ${u.name||u.email}? They won't be able to use the system.`,"Reject")){ store.put("users",{...structuredClone(u), active:false, pending:false, rejected:true}); } return; }
+  const kb = t.closest("[data-kick]"); if(kb){ const x=(S.sessions||[]).find(y=>y.id===kb.dataset.kick); if(x && isOwnerUser() && await confirmBox(`Sign ${x.name||x.email} out of ${x.device||"that device"}?`,"Sign out")){ (({id, ...rest}) => DB.doc("sessions/"+x.id).set({...rest, kick:true}))(x).catch(e=>showToast("Couldn't sign them out: "+(e.code||e.message))); showToast("Signing them out…"); } return; }
   const ua = t.closest("[data-uactive]"); if(ua){ const u=S.users.find(x=>x.id===ua.dataset.uactive); if(u){ const off = u.active!==false; if(!off || await confirmBox(`Switch off ${u.name||u.email}? They won't be able to use the system.`,"Switch off")){ store.put("users",{...structuredClone(u), active:!off}); } } return; }
   const ui = t.closest("[data-ui]"); if(ui){ S.ui[ui.dataset.ui]=ui.dataset.v; render(); return; }
   const ord = t.closest("[data-order]"); if(ord){ if($("#modal2").innerHTML) closeModal("#modal2"); openOrder(ord.dataset.order); return; }
