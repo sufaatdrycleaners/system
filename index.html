@@ -159,6 +159,7 @@ tbody tr.rowlink:hover td{background:#f7fafb}
 .svc{display:inline-flex;align-items:center;gap:5px;font-size:12px;font-weight:600;padding:2px 8px;border-radius:6px}
 .svc.cloth{background:var(--brand-soft);color:var(--brand-2)}
 .svc.carpet{background:var(--carpet-soft);color:var(--carpet)}
+.svc.mixed{background:linear-gradient(90deg,var(--brand-soft),var(--carpet-soft));color:var(--ink)}
 .toolbar{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:12px}
 .toolbar .sp{flex:1}
 .inp,select.inp,textarea.inp{border:1px solid var(--line);background:#fff;border-radius:8px;padding:8px 10px;min-width:0;width:100%}
@@ -190,6 +191,9 @@ label.f{display:flex;flex-direction:column;gap:5px;font-size:12.5px;font-weight:
 .seg input{display:none}
 .seg label.on{background:var(--grad);color:#fff}
 .seg label.on.carpet{background:var(--carpet)}
+.seg label.on.mixed{background:linear-gradient(90deg,var(--g1),var(--carpet))}
+#items-c:not(:empty){margin-top:18px;padding-top:4px;border-top:2px dashed var(--line)}
+@media (max-width:520px){ #svc-seg{display:flex;width:100%} #svc-seg label{flex:1;justify-content:center;padding:8px 6px;font-size:12.5px} }
 .items{border:1px solid var(--line);border-radius:10px;overflow:hidden}
 .irow{display:grid;gap:8px;padding:10px;border-bottom:1px solid var(--line);align-items:end}
 .irow:last-child{border-bottom:0}
@@ -478,7 +482,14 @@ function applyTheme(t){
   const r = document.documentElement.style; const ok = c => /^#[0-9a-f]{6}$/i.test(c||"");
   r.setProperty("--g1", ok(t&&t.g1)?t.g1:"#21473c"); r.setProperty("--g2", ok(t&&t.g2)?t.g2:"#3f8a6e");
 }
-const FLOW = { cloth:["Received","Cleaning","Ironing","Ready"], carpet:["Received","Cleaning","Drying","Ready"] };
+const FLOW = { cloth:["Received","Cleaning","Ironing","Ready"], carpet:["Received","Cleaning","Drying","Ready"], mixed:["Received","Cleaning","Drying","Ironing","Ready"] };
+// an order can be cloth, carpet, or "mixed" (clothes and carpets together on one invoice)
+const hasCloth  = o => o.service==="cloth"  || o.service==="mixed";
+const hasCarpet = o => o.service==="carpet" || o.service==="mixed";
+const svcWords = o => o.service==="mixed" ? "clothes and carpet(s)" : o.service==="carpet" ? "carpet(s)" : "clothes";
+const svcName = o => o.service==="mixed" ? "Cloth & carpet cleaning" : o.service==="carpet" ? "Carpet cleaning" : "Cloth cleaning";
+// value of one kind inside an order (whole total for single-service orders, item split for mixed)
+const kindValue = (o, kind) => o.service===kind ? orderTotal(o) : o.service==="mixed" ? (o.items||[]).filter(i=>(i.kind==="carpet"?"carpet":"cloth")===kind).reduce((x,i)=>x+lineTotal(i),0) : 0;
 const PENDING = ["Received","Cleaning","Ironing","Drying"];
 const DONE = ["Collected","Delivered"];
 
@@ -732,7 +743,7 @@ function topbar(title, sub, actions=""){
 const newOrderBtn = (extra="") => S.readOnly ? "" : `<button class="btn pri hide-m" data-act="new-order" ${extra}>${ic("plus")} New order</button>`;
 const chip = s => `<span class="chip s-${esc(s)}">${esc(s)}</span>`;
 const pchip = o => { const p=payStatus(o); return `<span class="chip p-${p}">${p}</span>`; };
-const svc = s => `<span class="svc ${s}">${s==="carpet"?"Carpet":"Cloth"}</span>`;
+const svc = s => `<span class="svc ${s}">${s==="mixed"?"Cloth + Carpet":s==="carpet"?"Carpet":"Cloth"}</span>`;
 
 /* ---------------- views ---------------- */
 const VIEWS = {};
@@ -792,8 +803,8 @@ VIEWS.dashboard = () => {
 };
 function workflowSummary(){
   const rows = ["cloth","carpet"].map(s=>{
-    const os = S.orders.filter(o=>o.service===s && !DONE.includes(o.status));
-    const st = FLOW[s].map(x=>`<div style="text-align:center;flex:1"><div style="font-size:18px;font-weight:700">${os.filter(o=>o.status===x).length}</div><div class="muted" style="font-size:11.5px">${x}</div></div>`).join(`<div class="muted" style="align-self:center">›</div>`);
+    const os = S.orders.filter(o=>(s==="cloth"?hasCloth(o):hasCarpet(o)) && !DONE.includes(o.status));
+    const st = FLOW[s].map(x=>`<div style="text-align:center;flex:1"><div style="font-size:18px;font-weight:700">${os.filter(o=>boardCol(o,s)===x).length}</div><div class="muted" style="font-size:11.5px">${x}</div></div>`).join(`<div class="muted" style="align-self:center">›</div>`);
     return `<div style="margin-bottom:12px"><div class="split" style="margin-bottom:6px">${svc(s)}<a class="small" href="#${s}">Open board →</a></div><div style="display:flex;gap:4px">${st}</div></div>`;
   }).join("");
   return rows;
@@ -834,7 +845,7 @@ VIEWS.orders = () => {
   else if(u.orderFilter==="ready") list = list.filter(o=>o.status==="Ready");
   else if(u.orderFilter==="done") list = list.filter(o=>DONE.includes(o.status));
   else if(u.orderFilter==="unpaid") list = list.filter(o=>balanceOf(o)>0);
-  if(u.orderSvc!=="all") list = list.filter(o=>o.service===u.orderSvc);
+  if(u.orderSvc!=="all") list = list.filter(o=>u.orderSvc==="carpet"?hasCarpet(o):hasCloth(o));
   if(q) list = list.filter(o=>[o.no,o.customerName,o.customerPhone,...(o.items||[]).map(i=>[i.type,i.desc,i.label,i.color].join(" "))].join(" ").toLowerCase().includes(q));
   list.sort((a,b)=>(b.createdAt||0)-(a.createdAt||0));
   const f = [["active","Active"],["pending","Pending"],["ready","Ready"],["done","Completed"],["unpaid","Has balance"],["all","All"]];
@@ -848,12 +859,14 @@ VIEWS.orders = () => {
   <div class="card">${list.length ? orderTable(list) : (S.orders.length? `<div class="empty">No orders match these filters.</div>` : emptyOrders())}</div>`;
 };
 
+// where a mixed order sits on the cloth or carpet board (e.g. "Drying" shows under Cleaning on the cloth board)
+function boardCol(o, service){ if(DONE.includes(o.status)) return "Done"; if(FLOW[service].includes(o.status)) return o.status; return o.status==="Ready" ? "Ready" : "Cleaning"; }
 function boardView(service){
   const cols = [...FLOW[service], "Done"];
-  const os = S.orders.filter(o=>o.service===service);
+  const os = S.orders.filter(o=>service==="carpet"?hasCarpet(o):hasCloth(o));
   const recentDone = os.filter(o=>DONE.includes(o.status)).sort((a,b)=>(b.updatedAt||0)-(a.updatedAt||0)).slice(0,10);
   const colHtml = cols.map(c=>{
-    const items = c==="Done" ? recentDone : os.filter(o=>o.status===c).sort((a,b)=>(a.expected||"").localeCompare(b.expected||""));
+    const items = c==="Done" ? recentDone : os.filter(o=>boardCol(o,service)===c).sort((a,b)=>(a.expected||"").localeCompare(b.expected||""));
     return `<div class="col"><h3>${c==="Done"?"Collected / Delivered":c}<span class="n">${c==="Done"?os.filter(o=>DONE.includes(o.status)).length:items.length}</span></h3>
       ${items.map(o=>ticket(o)).join("") || `<div class="muted small" style="padding:6px 4px">—</div>`}
       ${c==="Done"&&recentDone.length?`<div class="muted small" style="padding:2px 4px">Latest 10 shown</div>`:""}</div>`;
@@ -865,21 +878,21 @@ function boardView(service){
   let extra = "";
   if(isC){
     const active = os.filter(o=>!DONE.includes(o.status));
-    const carpets = active.reduce((s,o)=>s+(o.items||[]).reduce((a,i)=>a+(Math.max(1,num(i.qty)||1)),0),0);
+    const carpets = active.reduce((s,o)=>s+(o.items||[]).filter(i=>i.kind==="carpet").reduce((a,i)=>a+(Math.max(1,num(i.qty)||1)),0),0);
     const xp = active.reduce((s,o)=>s+(o.items||[]).filter(i=>i.express).length,0);
     const cm = active.reduce((s,o)=>s+(o.items||[]).filter(i=>i.ctype==="corridor").reduce((a,i)=>a+num(i.metres)*(Math.max(1,num(i.qty)||1)),0),0);
     extra = `<div class="kpis"><div class="kpi"><div class="l">Carpets in process</div><div class="v">${carpets}</div><div class="d">${xp} express</div></div><div class="kpi"><div class="l">Corridor metres</div><div class="v">${cm.toLocaleString("en-KE",{maximumFractionDigits:1})} m</div></div><div class="kpi"><div class="l">Value in process</div><div class="v">${money(active.reduce((s,o)=>s+subtotal(o),0))}</div></div></div>`;
   } else {
     const active = os.filter(o=>!DONE.includes(o.status));
-    const pcs = active.reduce((s,o)=>s+itemCount(o),0);
+    const pcs = active.reduce((s,o)=>s+(o.items||[]).filter(i=>i.kind!=="carpet").reduce((a,i)=>a+num(i.qty),0),0);
     extra = `<div class="kpis"><div class="kpi"><div class="l">Garments in process</div><div class="v">${pcs}</div></div><div class="kpi"><div class="l">Orders in process</div><div class="v">${active.length}</div></div><div class="kpi"><div class="l">Value in process</div><div class="v">${money(active.reduce((s,o)=>s+subtotal(o),0))}</div></div></div>`;
   }
   return topbar(title, sub, S.readOnly?"":`<button class="btn pri hide-m" data-act="new-order" data-svc="${service}">${ic("plus")} New ${isC?"carpet":"cloth"} order</button>`) + extra + `<div class="board ${isC?"carpet-o":""}">${colHtml}</div>`;
 }
 function ticket(o){
   const n = nextStatus(o);
-  const desc = o.service==="carpet"
-    ? (o.items||[]).map(i=> i.ctype ? `${esc(carpetName(i))}${i.express?" <span class=\"xchip\">EXP</span>":""}${num(i.qty)>1?` ×${num(i.qty)}`:""}` : `${esc(i.label||"Carpet")} ${num(i.length)}×${num(i.width)}m${num(i.qty)>1?` ×${num(i.qty)}`:""}`).join(", ")
+  const desc = o.service!=="cloth"
+    ? (o.items||[]).map(i=> i.kind!=="carpet" ? `${num(i.qty)} ${esc(i.type||i.desc||"item")}` : i.ctype ? `${esc(carpetName(i))}${i.express?" <span class=\"xchip\">EXP</span>":""}${num(i.qty)>1?` ×${num(i.qty)}`:""}` : `${esc(i.label||"Carpet")} ${num(i.length)}×${num(i.width)}m${num(i.qty)>1?` ×${num(i.qty)}`:""}`).join(", ")
     : (o.items||[]).map(i=>`${num(i.qty)} ${esc(i.type||i.desc||"item")}`).join(", ");
   return `<div class="tk" data-order="${o.id}">
     <div class="t1"><span>${esc(o.no)}</span><span>${money0(orderTotal(o))}</span></div>
@@ -977,9 +990,9 @@ VIEWS.reports = () => {
   const exps = S.expenses.filter(e=>inR(e.date)).sort((x,y)=>(y.date||"").localeCompare(x.date||""));
   const expTotal = exps.reduce((s,e)=>s+num(e.amount),0);
   const recv = S.orders.filter(o=>inR(o.dateReceived));
-  const cl = recv.filter(o=>o.service==="cloth"), ca = recv.filter(o=>o.service==="carpet");
-  const clVal = cl.reduce((s,o)=>s+orderTotal(o),0), caVal = ca.reduce((s,o)=>s+orderTotal(o),0);
-  const caArea = ca.reduce((s,o)=>s+(o.items||[]).reduce((x,i)=>x+(Math.max(1,num(i.qty)||1)),0),0);
+  const cl = recv.filter(hasCloth), ca = recv.filter(hasCarpet);
+  const clVal = cl.reduce((s,o)=>s+kindValue(o,"cloth"),0), caVal = ca.reduce((s,o)=>s+kindValue(o,"carpet"),0);
+  const caArea = ca.reduce((s,o)=>s+(o.items||[]).filter(i=>i.kind==="carpet").reduce((x,i)=>x+(Math.max(1,num(i.qty)||1)),0),0);
   const outstanding = S.orders.reduce((s,o)=>s+balanceOf(o),0);
   const profit = sales - expTotal;
   // daily sales
@@ -1193,15 +1206,15 @@ function renderOrderDetail(o){
 }
 function readyMsg(o){
   const st=S.settings;
-  return `Hello ${o.customerName}, your ${o.service==="carpet"?"carpet":"clothes"} (order ${o.no}) ${o.delivery&&o.delivery.required?"are ready and will be delivered soon":"are ready for collection"}. Total ${money(orderTotal(o))}, balance ${money(balanceOf(o))}. Thank you — ${st.businessName}${st.phone?" ("+st.phone+")":""}.`;
+  return `Hello ${o.customerName}, your ${svcWords(o)} (order ${o.no}) ${o.delivery&&o.delivery.required?"are ready and will be delivered soon":"are ready for collection"}. Total ${money(orderTotal(o))}, balance ${money(balanceOf(o))}. Thank you — ${st.businessName}${st.phone?" ("+st.phone+")":""}.`;
 }
 function receiptText(o){
   const st=S.settings; const L="--------------------------------";
   const lines=[st.businessName.toUpperCase()]; if(st.address) lines.push(st.address); if(st.postal) lines.push(st.postal); if(st.phone) lines.push("Tel: "+st.phone);
-  lines.push(L, `Receipt: ${o.no}`, `Date: ${fmtDate(o.dateReceived)}`, `Customer: ${o.customerName}`, `Phone: ${o.customerPhone||"-"}`, `Service: ${o.service==="carpet"?"Carpet cleaning":"Cloth cleaning"}`, L);
+  lines.push(L, `Receipt: ${o.no}`, `Date: ${fmtDate(o.dateReceived)}`, `Customer: ${o.customerName}`, `Phone: ${o.customerPhone||"-"}`, `Service: ${svcName(o)}`, L);
   (o.items||[]).forEach(i=>{
     if(i.kind==="carpet" && i.ctype) lines.push(`${i.label?i.label+" ":""}${carpetLabel(i)}${num(i.qty)>1?" x"+num(i.qty):""}`, `   = KSh ${money0(lineTotal(i))}`);
-    else if(o.service==="carpet") lines.push(`${i.label||"Carpet"} ${num(i.length)}m x ${num(i.width)}m = ${carpetArea(i)}m2${num(i.qty)>1?" x"+num(i.qty):""} @${money0(i.rate)}`, `   = KSh ${money0(lineTotal(i))}`);
+    else if(i.kind==="carpet") lines.push(`${i.label||"Carpet"} ${num(i.length)}m x ${num(i.width)}m = ${carpetArea(i)}m2${num(i.qty)>1?" x"+num(i.qty):""} @${money0(i.rate)}`, `   = KSh ${money0(lineTotal(i))}`);
     else lines.push(`${num(i.qty)} x ${i.type||"Item"}${itemNote(i)?" ("+itemNote(i)+")":""} @${money0(i.price)}`, `   = KSh ${money0(lineTotal(i))}`);
   });
   lines.push(L);
@@ -1284,6 +1297,8 @@ function garmentList(){
   used.sort((a,b)=>a.name.localeCompare(b.name));
   return out.concat(used);
 }
+// days until ready: the longer of the two for cloth + carpet orders
+const svcDays = sv => sv==="carpet" ? num(S.settings.carpetDays) : sv==="mixed" ? Math.max(num(S.settings.carpetDays), num(S.settings.clothDays)) : num(S.settings.clothDays);
 function blankItem(service){
   if(service==="carpet") return null;
   const p = (S.settings.clothPrices||[])[0] || {name:"Item",price:0};
@@ -1296,9 +1311,9 @@ function openOrderForm(existing, opts={}){
   else {
     const svcType = opts.service || "cloth";
     draft = { id:uid(), service:svcType, customerId:opts.customerId||"", items:[], dateReceived:today(),
-      expected:addDays(today(), num(svcType==="carpet"?st.carpetDays:st.clothDays)), status:"Received", payments:[], discount:0,
+      expected:addDays(today(), svcDays(svcType)), status:"Received", payments:[], discount:0,
       delivery:{required:false, location:"", fee:st.defaultDeliveryFee, driver:"", status:"Pending"}, notes:"" };
-    if(svcType==="cloth") draft.items.push(blankItem(svcType));
+    if(svcType!=="carpet") draft.items.push(blankItem("cloth"));
     if(draft.customerId){ const c=custById(draft.customerId); if(c) draft.delivery.location=c.location||""; }
   }
   const custOpts = [...S.customers].sort((a,b)=>(a.name||"").localeCompare(b.name||"")).map(c=>`<option value="${c.id}" ${draft.customerId===c.id?"selected":""}>${esc(c.name)} — ${esc(c.phone)}</option>`).join("");
@@ -1321,11 +1336,13 @@ function openOrderForm(existing, opts={}){
     <div class="seg" id="svc-seg">
       <label class="${draft.service==="cloth"?"on":""}"><input type="radio" name="service" value="cloth" ${draft.service==="cloth"?"checked":""}>${ic("cloth",16)} Cloth</label>
       <label class="${draft.service==="carpet"?"on carpet":""}"><input type="radio" name="service" value="carpet" ${draft.service==="carpet"?"checked":""}>${ic("carpet",16)} Carpet</label>
+      <label class="${draft.service==="mixed"?"on mixed":""}"><input type="radio" name="service" value="mixed" ${draft.service==="mixed"?"checked":""}>${ic("cloth",15)}+${ic("carpet",15)} Cloth + Carpet</label>
     </div>
     <div class="sec-t" id="items-title" style="${draft.service==="carpet"?"display:none":""}">Items</div>
     <div id="items"></div>
     <button type="button" class="btn sm" style="margin-top:8px;${draft.service==="carpet"?"display:none":""}" id="add-item">${ic("plus",14)} Add item</button>
     <button type="button" class="btn sm" style="margin-top:8px;${draft.service==="carpet"?"display:none":""}" id="add-garment">${ic("plus",14)} New garment name</button>
+    <div id="items-c"></div>
     <input type="file" accept="image/*" id="scan-file" hidden>
     <div class="sec-t">Dates</div>
     <div class="fgrid">
@@ -1359,13 +1376,14 @@ function openOrderForm(existing, opts={}){
 }
 function renderItems(){
   const box = $("#items"); if(!box) return;
+  const boxC = $("#items-c"); if(boxC) boxC.innerHTML = draft.service==="mixed" ? `<div class="sec-t" style="margin-top:8px">${ic("carpet",15)} Carpets in this order</div>${carpetPicker()}` : "";
   if(draft.service==="carpet"){ box.className=""; box.innerHTML = carpetPicker(); return; }
   box.className = "items";
   const garments = garmentList();
   const head = draft.service==="carpet"
     ? `<div class="irow carpet ihead" style="padding-bottom:0;border:0"><span>Carpet ID</span><span>Description</span><span>Length (m)</span><span>Width (m)</span><span>No.</span><span>Rate /m²</span><span style="text-align:right">Total</span><span></span></div>`
     : `<div class="irow cloth ihead" style="padding-bottom:0;border:0"><span>Garment</span><span>Description</span><span>Qty</span><span>Price</span><span style="text-align:right">Total</span><span></span></div>`;
-  box.innerHTML = head + draft.items.map((it,i)=> it.kind==="carpet"
+  box.innerHTML = head + draft.items.map((it,i)=> draft.service==="mixed" && it.kind==="carpet" ? "" : it.kind==="carpet"
     ? `<div class="irow carpet" data-i="${i}">
         <input class="inp" data-k="label" value="${esc(it.label)}" placeholder="C1">
         <div class="dcell">${colourSelect(it.color)}<input class="inp" data-k="desc" value="${esc(it.desc)}" placeholder="Type, notes…"></div>
@@ -1402,7 +1420,7 @@ function updateSum(){
   const tot = orderTotal(draft);
   const pcs = draft.items.reduce((s,i)=>s+(Math.max(1,num(i.qty)||1)),0), xp = draft.items.filter(i=>i.express).length;
   box.innerHTML = `
-    <div class="r"><span>${draft.service==="carpet"?`${pcs} piece(s)${xp?` · ${xp} express`:""}`:`${draft.items.reduce((s,i)=>s+num(i.qty),0)} item(s)`}</span><span>${money(subtotal(draft))}</span></div>
+    <div class="r"><span>${draft.service==="carpet"?`${pcs} piece(s)${xp?` · ${xp} express`:""}`:draft.service==="mixed"?`${draft.items.filter(i=>i.kind!=="carpet").reduce((s,i)=>s+num(i.qty),0)} item(s) + ${draft.items.filter(i=>i.kind==="carpet").reduce((s,i)=>s+Math.max(1,num(i.qty)||1),0)} carpet(s)`:`${draft.items.reduce((s,i)=>s+num(i.qty),0)} item(s)`}</span><span>${money(subtotal(draft))}</span></div>
     ${delFee(draft)?`<div class="r"><span>Delivery</span><span>${money(delFee(draft))}</span></div>`:""}
     ${num(draft.discount)?`<div class="r"><span>Discount</span><span>− ${money(draft.discount)}</span></div>`:""}
     <div class="r big"><span>Total</span><span>${money(tot)}</span></div>
@@ -1411,6 +1429,7 @@ function updateSum(){
 }
 function bindOrderForm(){
   const fm = $("#order-form");
+  const onItems = (ev, fn) => ["#items","#items-c"].forEach(q=>{ const el=$(q); if(el) el.addEventListener(ev, fn); });
   const sel = $("#cust-sel");
   sel.onchange = () => { draft.customerId = sel.value; $("#newcust").style.display = sel.value ? "none" : ""; const c=custById(sel.value); if(c && !fm.delLoc.value) fm.delLoc.value = c.location||""; };
   const filt = $("#cust-filter");
@@ -1418,31 +1437,31 @@ function bindOrderForm(){
   $$("#svc-seg input").forEach(r=> r.onchange = () => {
     readDraft(); const s = r.value; if(s===draft.service) return;
     draft.service = s;
-    const hasData = draft.items.some(i=> i.kind==="carpet" ? (i.length||i.width) : i.desc);
-    draft.items = draft.items.filter(i=>i.kind===s); if(!draft.items.length && s==="cloth") draft.items.push(blankItem(s));
-    if(!draft._edit) fm.expected.value = draft.expected = addDays(fm.dateReceived.value||today(), num(s==="carpet"?S.settings.carpetDays:S.settings.clothDays));
-    $$("#svc-seg label").forEach(l=>{ const on=$("input",l).value===s; l.className = on ? ("on"+(s==="carpet"?" carpet":"")) : ""; });
+    if(s!=="mixed") draft.items = draft.items.filter(i=>i.kind===s);
+    if(s!=="carpet" && !draft.items.some(i=>i.kind!=="carpet")) draft.items.unshift(blankItem("cloth"));
+    if(!draft._edit) fm.expected.value = draft.expected = addDays(fm.dateReceived.value||today(), svcDays(s));
+    $$("#svc-seg label").forEach(l=>{ const v=$("input",l).value, on=v===s; l.className = on ? ("on"+(s==="carpet"?" carpet":s==="mixed"?" mixed":"")) : ""; });
     $("#items-title").style.display = s==="carpet"?"none":"";
     $("#add-item").style.display = s==="carpet" ? "none" : "";
     $("#add-garment").style.display = s==="carpet" ? "none" : "";
     renderItems(); updateSum();
   });
   $("#add-garment").onclick = () => { readDraft(); const it={kind:"cloth", type:"", desc:"", qty:1, price:"", _new:true}; const blank=draft.items.findIndex(i=>i.kind==="cloth"&&!i._new&&!String(i.desc||"").trim()&&draft.items.length===1&&num(i.qty)===1); if(blank===0) draft.items[0]=it; else draft.items.push(it); renderItems(); updateSum(); const rows=$$(".irow[data-i] .gnew input"); const ni=rows[rows.length-1]; ni&&ni.focus(); };
-  $("#add-item").onclick = () => { readDraft(); draft.items.push(blankItem(draft.service)); renderItems(); updateSum(); const rows=$$(".irow[data-i]"); const last=rows[rows.length-1]; if(last){ const f=$("[data-k=desc]",last)||$("input",last); f&&f.focus(); } };
-  $("#items").addEventListener("click", e => { const b=e.target.closest("[data-rm]"); if(!b) return; readDraft(); draft.items.splice(+b.dataset.rm,1); if(!draft.items.length && draft.service==="cloth") draft.items.push(blankItem("cloth")); renderItems(); updateSum(); });
-  $("#items").addEventListener("click", e => { const t=e.target.closest("[data-tile]"); if(t){ readDraft(); addCarpetFromTile(t.dataset.tile); return; } const m=e.target.closest("[data-cmode]"); if(m){ readDraft(); draft._mode=m.dataset.cmode; renderItems(); return; } if(e.target.closest("[data-act=scan]")){ e.stopPropagation(); $("#scan-file").click(); } });
+  $("#add-item").onclick = () => { readDraft(); draft.items.push(blankItem(draft.service)); renderItems(); updateSum(); const rows=$$("#items .irow[data-i]"); const last=rows[rows.length-1]; if(last){ const f=$("[data-k=desc]",last)||$("input",last); f&&f.focus(); } };
+  onItems("click", e => { const b=e.target.closest("[data-rm]"); if(!b) return; readDraft(); draft.items.splice(+b.dataset.rm,1); if(!draft.items.length && draft.service==="cloth") draft.items.push(blankItem("cloth")); renderItems(); updateSum(); });
+  onItems("click", e => { const t=e.target.closest("[data-tile]"); if(t){ readDraft(); addCarpetFromTile(t.dataset.tile); return; } const m=e.target.closest("[data-cmode]"); if(m){ readDraft(); draft._mode=m.dataset.cmode; renderItems(); return; } if(e.target.closest("[data-act=scan]")){ e.stopPropagation(); $("#scan-file").click(); } });
   $("#scan-file").onchange = e => { const f=e.target.files[0]; e.target.value=""; if(f){ readDraft(); scanPhoto(f); } };
-  $("#items").addEventListener("click", e => { const b=e.target.closest("[data-cpick]"); if(b){ e.preventDefault(); e.stopPropagation(); openColourPicker(b); } });
-  $("#items").addEventListener("change", e => { const s=e.target;
+  onItems("click", e => { const b=e.target.closest("[data-cpick]"); if(b){ e.preventDefault(); e.stopPropagation(); openColourPicker(b); } });
+  onItems("change", e => { const s=e.target;
     if(s.dataset.k==="type" && s.tagName==="SELECT"){
       const row=s.closest(".irow");
       if(s.value==="__new"){ readDraft(); const it=draft.items[+row.dataset.i]; it._new=true; it.type=""; it.price=""; renderItems(); updateSum(); const ni=$(`.irow[data-i="${row.dataset.i}"] [data-k=type]`); ni&&ni.focus(); return; }
       const p=garmentList().find(x=>x.name===s.value); if(p && row){ $("[data-k=price]",row).value=p.price; } }
     readDraft(); updateSum(); });
-  $("#items").addEventListener("click", e => { const b=e.target.closest("[data-gback]"); if(!b) return; readDraft(); const it=draft.items[+b.dataset.gback]; const g=garmentList()[0]||{name:"Item",price:0}; it._new=false; it.type=g.name; it.price=g.price; renderItems(); updateSum(); });
+  onItems("click", e => { const b=e.target.closest("[data-gback]"); if(!b) return; readDraft(); const it=draft.items[+b.dataset.gback]; const g=garmentList()[0]||{name:"Item",price:0}; it._new=false; it.type=g.name; it.price=g.price; renderItems(); updateSum(); });
   fm.addEventListener("input", () => { readDraft(); updateSum(); });
   fm.delReq.onchange = () => { $("#del-fields").style.display = fm.delReq.checked ? "" : "none"; if(fm.delReq.checked && !fm.delLoc.value){ const c=custById(sel.value); fm.delLoc.value = c ? (c.location||"") : (fm.nc_location.value||""); } readDraft(); updateSum(); };
-  fm.dateReceived.onchange = () => { if(!draft._edit) fm.expected.value = addDays(fm.dateReceived.value||today(), num(draft.service==="carpet"?S.settings.carpetDays:S.settings.clothDays)); };
+  fm.dateReceived.onchange = () => { if(!draft._edit) fm.expected.value = addDays(fm.dateReceived.value||today(), svcDays(draft.service)); };
   fm.onsubmit = e => { e.preventDefault(); saveOrder(); };
 }
 function saveOrder(){
@@ -1457,7 +1476,7 @@ function saveOrder(){
       cust = {id:uid(), code:nextCustCode(), name, phone, whatsapp, location:fm.nc_location.value.trim(), createdAt:Date.now()}; store.put("customers", cust); }
   }
   const items = draft.items.filter(i => i.kind==="carpet" ? (i.ctype==="corridor" ? num(i.metres)>0 : i.ctype==="custom" ? (num(i.length)>0 && num(i.width)>0) : true) : num(i.qty)>0);
-  if(!items.length){ showToast(draft.service==="carpet"?"Tap a carpet size to add at least one carpet":"Add at least one item"); return; }
+  if(!items.length){ showToast(draft.service==="carpet"?"Tap a carpet size to add at least one carpet":draft.service==="mixed"?"Add at least one garment or carpet":"Add at least one item"); return; }
   if(items.length < draft.items.length){ showToast("Fill in the size of every corridor / custom carpet, or remove it"); return; }
   const unnamed = items.find(i=>i.kind==="cloth" && !String(i.type||"").trim());
   if(unnamed){ showToast("Type the name of the new garment"); const r=$$(".irow[data-i] .gnew input").find(x=>!x.value.trim()); r&&r.focus(); return; }
@@ -1466,6 +1485,7 @@ function saveOrder(){
   const fresh = []; items.forEach(i=>{ if(i.kind==="cloth" && i._new && !known.has(i.type.toLowerCase())){ known.add(i.type.toLowerCase()); fresh.push({name:i.type, price:num(i.price)}); } });
   if(fresh.length && S.role==="admin" && !S.readOnly){ store.saveSettings({...S.settings, clothPrices:[...(S.settings.clothPrices||[]), ...fresh]}); }
   const o = structuredClone(draft); delete o._edit;
+  { const kinds = new Set(items.map(i=>i.kind==="carpet"?"carpet":"cloth")); o.service = kinds.size===2 ? "mixed" : kinds.has("carpet") ? "carpet" : "cloth"; }
   o.items = items.map(i => i.kind==="carpet" ? JSON.parse(JSON.stringify({kind:"carpet", ctype:i.ctype, label:i.label||"", desc:i.desc||"", color:i.color||undefined, size:i.size, name:i.name, metres:i.metres!==undefined?num(i.metres):undefined, length:i.length!==undefined?num(i.length):undefined, width:i.width!==undefined?num(i.width):undefined, rate:i.rate!==undefined?num(i.rate):undefined, price:basePrice(i), qty:Math.max(1,num(i.qty)||1), express:!!i.express, mult:i.express?num(i.mult||S.settings.expressMult||2):undefined})) : {kind:"cloth", type:i.type, desc:i.desc||"", color:i.color||"", qty:num(i.qty), price:num(i.price)});
   delete o._mode;
   o.customerId = cust.id; o.customerName = cust.name; o.customerPhone = cust.phone||""; o.customerWa = cust.whatsapp||"";
@@ -1536,17 +1556,17 @@ function reportText(){
   return [`${S.settings.businessName} — Report (${label})`,
     `Sales: ${money(sales)} (M-PESA ${money(pays.filter(p=>p.method==="M-PESA").reduce((s,p)=>s+num(p.amount),0))}, Cash ${money(pays.filter(p=>p.method==="Cash").reduce((s,p)=>s+num(p.amount),0))})`,
     `Expenses: ${money(exp)}`, `Profit: ${money(sales-exp)}`,
-    `Cloth orders: ${recv.filter(o=>o.service==="cloth").length}`, `Carpet orders: ${recv.filter(o=>o.service==="carpet").length}`,
+    `Cloth orders: ${recv.filter(hasCloth).length}`, `Carpet orders: ${recv.filter(hasCarpet).length}`,
     `Outstanding payments: ${money(S.orders.reduce((s,o)=>s+balanceOf(o),0))}`].join("\n");
 }
 
 /* ================= SUFAAT additions ================= */
 const STAGE_TEXT = {
-  Received: o => `we have received your ${o.service==="carpet"?"carpet(s)":"clothes"} (${itemCount(o)} item${itemCount(o)===1?"":"s"}). Order ${o.no}. Total ${money(orderTotal(o))}, paid ${money(paidOf(o))}, balance ${money(balanceOf(o))}. Expected ready: ${fmtDate(o.expected)}.`,
-  Cleaning: o => `your ${o.service==="carpet"?"carpet(s)":"clothes"} (order ${o.no}) are now being cleaned.`,
-  Ironing: o => `your clothes (order ${o.no}) are washed and now being ironed and finished.`,
+  Received: o => `we have received your ${svcWords(o)} (${itemCount(o)} item${itemCount(o)===1?"":"s"}). Order ${o.no}. Total ${money(orderTotal(o))}, paid ${money(paidOf(o))}, balance ${money(balanceOf(o))}. Expected ready: ${fmtDate(o.expected)}.`,
+  Cleaning: o => `your ${svcWords(o)} (order ${o.no}) are now being cleaned.`,
+  Ironing: o => `your clothes (order ${o.no}) are washed and now being ironed and finished.${o.service==="mixed"?" Your carpet(s) are washed and drying.":""}`,
   Drying: o => `your carpet(s) (order ${o.no}) are washed and now drying.`,
-  Ready: o => `your ${o.service==="carpet"?"carpet(s) are":"clothes are"} READY (order ${o.no}). ${o.delivery&&o.delivery.required?"We will deliver to "+(o.delivery.location||"you")+" soon.":"You can collect them at our shop."} Balance to pay: ${money(balanceOf(o))}.`,
+  Ready: o => `your ${svcWords(o)} are READY (order ${o.no}). ${o.delivery&&o.delivery.required?"We will deliver to "+(o.delivery.location||"you")+" soon.":"You can collect them at our shop."} Balance to pay: ${money(balanceOf(o))}.`,
   Collected: o => `thank you for collecting your order ${o.no}. ${balanceOf(o)>0?"Remaining balance: "+money(balanceOf(o))+".":"Fully paid."} We hope to serve you again!`,
   Delivered: o => `your order ${o.no} has been delivered. ${balanceOf(o)>0?"Remaining balance: "+money(balanceOf(o))+".":"Fully paid."} Thank you for choosing us!`
 };
@@ -1616,6 +1636,7 @@ function carpetPicker(){
   const other = `<button type="button" class="tile" style="background:#37474f" data-tile="custom">${tag}<small class="k">Carpet</small><b class="big">Custom</b><small>L × W × ${money0(st.customRate)}</small></button>`
     + (st.extraServices||[]).map((x,i)=>`<button type="button" class="tile" style="background:${col()}" data-tile="service|${i}">${tag}<small class="k">Service</small><b class="big" style="font-size:16px">${esc(x.name)}</b><small>${num(x.price)?"KSh "+money0(num(x.price)*(exp?mult:1)):"Set price"}</small></button>`).join("");
   const rows = draft.items.map((it,i)=>{
+    if(it.kind!=="carpet") return "";
     const sizeCell = it.ctype==="corridor" ? `<div class="sz"><input class="inp" type="number" min="0" step="0.1" data-k="metres" value="${esc(it.metres)}"> m</div>`
       : it.ctype==="custom" ? `<div class="sz"><input class="inp" type="number" min="0" step="0.1" data-k="length" value="${esc(it.length)}" placeholder="L">×<input class="inp" type="number" min="0" step="0.1" data-k="width" value="${esc(it.width)}" placeholder="W"></div>`
       : `<div class="nm">${esc(carpetName(it))}</div>`;
@@ -1637,7 +1658,7 @@ function carpetPicker(){
     <div class="sec-t" style="margin-top:6px">Carpets</div><div class="tiles">${sizes}</div>
     <div class="sec-t">Corridor carpets · ${money(st.corridorRate)} per metre</div><div class="tiles">${cor}</div>
     <div class="sec-t">Other</div><div class="tiles">${other}</div>
-    <div class="sec-t">Added to this order (${draft.items.length})</div>
+    <div class="sec-t">Carpets added (${draft.items.filter(i=>i.kind==="carpet").length})</div>
     <div class="items">${rows || `<div class="empty small" style="padding:18px">No carpets added yet — tap a size above${S.canScan?" or scan a photo":""}.</div>`}</div>`;
 }
 function nextLabel(){ let n=0; draft.items.forEach(i=>{ const m=/^C(\d+)$/.exec(i.label||""); if(m) n=Math.max(n,+m[1]); }); return "C"+(n+1); }
@@ -1809,7 +1830,7 @@ async function invoicePdf(o, forSend=false){
   pdf.text("BILL TO", 36, y, {size:8, bold:true, color:G1}); pdf.text("ORDER DETAILS", 320, y, {size:8, bold:true, color:G1}); y+=15;
   const c = custById(o.customerId)||{};
   [[o.customerName,true], [o.customerPhone||""], [c.location||(o.delivery&&o.delivery.location)||""], [c.code?("Customer ID: "+c.code):""]].filter(r=>r[0]).forEach((r,i)=>pdf.text(r[0],36,y+i*13,{size:r[1]?11:9.5,bold:!!r[1]}));
-  [["Service", o.service==="carpet"?"Carpet cleaning":"Cloth cleaning"],["Received",fmtDate(o.dateReceived)],["Ready by",fmtDate(o.expected)],["Status",o.status],["Delivery",o.delivery&&o.delivery.required?(o.delivery.location||"Yes"):"Collect at shop"]]
+  [["Service", svcName(o)],["Received",fmtDate(o.dateReceived)],["Ready by",fmtDate(o.expected)],["Status",o.status],["Delivery",o.delivery&&o.delivery.required?(o.delivery.location||"Yes"):"Collect at shop"]]
     .forEach((r,i)=>{ pdf.text(r[0],320,y+i*13,{size:9.5,color:MUTED}); pdf.text(pdf.fit(r[1],170,9.5,true),389,y+i*13,{size:9.5,bold:true}); });
   pdf.y = y + 5*13 + 12;
   const rows = (o.items||[]).map(i=> i.kind==="carpet"
@@ -1896,7 +1917,7 @@ async function statementPdf(c){
   const tot=os.reduce((s,o)=>s+orderTotal(o),0), paid=os.reduce((s,o)=>s+paidOf(o),0), bal=os.reduce((s,o)=>s+balanceOf(o),0);
   summaryBoxes(pdf, [["Orders",String(os.length)],["Total billed",money(tot)],["Total paid",money(paid)],["Balance",money(bal)]]);
   pdfTable(pdf, [{t:"DATE",w:66},{t:"ORDER",w:70},{t:"SERVICE",w:150},{t:"STATUS",w:70},{t:"TOTAL",w:55,align:"right"},{t:"PAID",w:55,align:"right"},{t:"BALANCE",w:57,align:"right"}],
-    os.map(o=>[fmtShort(o.dateReceived), o.no, (o.service==="carpet"?"Carpet: ":"Cloth: ")+(o.items||[]).map(i=>i.kind==="carpet"?carpetName(i):(num(i.qty)+" "+(i.type||""))).join(", "), o.status, money0(orderTotal(o)), money0(paidOf(o)), money0(balanceOf(o))]), {boldCol:6});
+    os.map(o=>[fmtShort(o.dateReceived), o.no, (o.service==="mixed"?"Cloth+Carpet: ":o.service==="carpet"?"Carpet: ":"Cloth: ")+(o.items||[]).map(i=>i.kind==="carpet"?carpetName(i):(num(i.qty)+" "+(i.type||""))).join(", "), o.status, money0(orderTotal(o)), money0(paidOf(o)), money0(balanceOf(o))]), {boldCol:6});
   pdf.ensure(150); pdf.y+=16; pdf.text("BALANCE DUE", 360, pdf.y, {size:11,bold:true}); pdf.text(money(bal), 553, pdf.y, {size:12,bold:true,align:"right",color:bal>0?"#b4322d":"#1d7f4e"});
   await pdf.stamp(441, pdf.y+14, 118, bal<=0?"PAID":"");
   await savePdf(pdf, `Statement-${(c.name||"customer").replace(/\s+/g,"-")}.pdf`);
@@ -1914,8 +1935,8 @@ async function reportPdf(){
   summaryBoxes(pdf, [["Sales received",money(sales)],["Expenses",money(expT)],["Profit",money(sales-expT)],["Outstanding",money(out)]]);
   pdf.text("INCOME", 36, pdf.y, {size:9,bold:true,color:G1}); pdf.y+=8;
   pdfTable(pdf, [{t:"ITEM",w:400},{t:"AMOUNT (KSH)",w:123,align:"right"}], [["M-PESA payments",money0(mp)],["Cash payments",money0(cash)],["Total sales",money0(sales)],
-    [`Cloth orders received (${recv.filter(o=>o.service==="cloth").length})`, money0(recv.filter(o=>o.service==="cloth").reduce((s,o)=>s+orderTotal(o),0))],
-    [`Carpet orders received (${recv.filter(o=>o.service==="carpet").length})`, money0(recv.filter(o=>o.service==="carpet").reduce((s,o)=>s+orderTotal(o),0))]]);
+    [`Cloth orders received (${recv.filter(hasCloth).length})`, money0(recv.filter(hasCloth).reduce((s,o)=>s+kindValue(o,"cloth"),0))],
+    [`Carpet orders received (${recv.filter(hasCarpet).length})`, money0(recv.filter(hasCarpet).reduce((s,o)=>s+kindValue(o,"carpet"),0))]]);
   pdf.y+=16; pdf.ensure(60); pdf.text("EXPENSES", 36, pdf.y, {size:9,bold:true,color:G1}); pdf.y+=8;
   const er = Object.entries(byCat).sort((x,y)=>y[1]-x[1]).map(([k,v])=>[k,money0(v)]); er.push(["Total expenses", money0(expT)]);
   pdfTable(pdf, [{t:"CATEGORY",w:400},{t:"AMOUNT (KSH)",w:123,align:"right"}], er);
