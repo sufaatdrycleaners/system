@@ -1205,9 +1205,17 @@ function renderOrderDetail(o){
   </div>`;
   openModal(html);
 }
+/* ---- customer messages in English and Somali ---- */
+// language per customer: "" = English + Somali (default), "so" = Somali only, "en" = English only
+function custLang(o){ const c = o && o.customerId ? custById(o.customerId) : null; return (c && c.lang) || ""; }
+function bi(o, en, so){ const l = custLang(o); return l==="en" ? en : l==="so" ? so : `${en}\n\n${so}`; }
+const svcWordsSo = o => o.service==="mixed" ? "dharkaaga iyo roogaggaaga" : o.service==="carpet" ? "roogaggaaga" : "dharkaaga";
+const fullyPaidSo = o => balanceOf(o)>0 ? `Haraaga lacagta: ${money(balanceOf(o))}.` : "Lacagta si buuxda ayaa loo bixiyay.";
 function readyMsg(o){
   const st=S.settings;
-  return `Hello ${o.customerName}, your ${svcWords(o)} (order ${o.no}) ${o.delivery&&o.delivery.required?"are ready and will be delivered soon":"are ready for collection"}. Total ${money(orderTotal(o))}, balance ${money(balanceOf(o))}. Thank you — ${st.businessName}${st.phone?" ("+st.phone+")":""}.`;
+  return bi(o,
+    `Hello ${o.customerName}, your ${svcWords(o)} (order ${o.no}) ${o.delivery&&o.delivery.required?"are ready and will be delivered soon":"are ready for collection"}. Total ${money(orderTotal(o))}, balance ${money(balanceOf(o))}. Thank you — ${st.businessName}${st.phone?" ("+st.phone+")":""}.`,
+    `Asalaamu calaykum ${o.customerName}, ${svcWordsSo(o)} (dalabka ${o.no}) ${o.delivery&&o.delivery.required?"waa diyaar, dhowaan ayaa laguu keeni doonaa":"waa diyaar, waad iman kartaa inaad qaadato"}. Wadarta ${money(orderTotal(o))}, haraaga ${money(balanceOf(o))}. Mahadsanid — ${st.businessName}${st.phone?" ("+st.phone+")":""}.`);
 }
 function receiptText(o){
   const st=S.settings; const L="--------------------------------";
@@ -1270,7 +1278,8 @@ function openCustForm(c){
     <label class="f full">Name<input class="inp" name="name" required value="${esc(c.name)}"></label>
     <label class="f">Phone<input class="inp" name="phone" type="tel" value="${esc(c.phone)}" placeholder="07XX XXX XXX"></label>
     <label class="f">WhatsApp number <span class="muted small">(if different)</span><input class="inp" name="whatsapp" type="tel" value="${esc(c.whatsapp||"")}" placeholder="Leave empty if same as phone"></label>
-    <label class="f full">Location<input class="inp" name="location" value="${esc(c.location)}"></label>
+    <label class="f">Location<input class="inp" name="location" value="${esc(c.location)}"></label>
+    <label class="f">Message language<select class="inp" name="lang">${[["","English + Somali"],["so","Somali only"],["en","English only"]].map(([v,l])=>`<option value="${v}" ${(c.lang||"")===v?"selected":""}>${l}</option>`).join("")}</select></label>
   </div><div class="md-f"><button type="button" class="btn" data-close2>Cancel</button><button class="btn pri">Save</button></div></form>`, true, "#modal2");
   $("#cust-form").onsubmit = e => {
     e.preventDefault(); const fd = new FormData(e.target);
@@ -1279,7 +1288,7 @@ function openCustForm(c){
     if(isNew && phone && S.customers.some(x=>waPhone(x.phone)===waPhone(phone))){ showToast("A customer with this phone already exists"); return; }
     const obj = isNew ? {id:uid(), code:nextCustCode(), createdAt:Date.now()} : structuredClone(c);
     let whatsapp = (fd.get("whatsapp")||"").trim(); if(whatsapp && waPhone(whatsapp)===waPhone(phone)) whatsapp = "";
-    Object.assign(obj, {name, phone, whatsapp, location:fd.get("location").trim()});
+    Object.assign(obj, {name, phone, whatsapp, location:fd.get("location").trim(), lang:fd.get("lang")||""});
     store.put("customers", obj);
     if(!isNew){ // keep order copies of name/phone in sync
       S.orders.filter(o=>o.customerId===obj.id && (o.customerName!==obj.name || o.customerPhone!==obj.phone || (o.customerWa||"")!==obj.whatsapp)).forEach(o=>store.put("orders",{...structuredClone(o), customerName:obj.name, customerPhone:obj.phone, customerWa:obj.whatsapp}));
@@ -1330,7 +1339,8 @@ function openOrderForm(existing, opts={}){
         <label class="f">Name<input class="inp" name="nc_name" placeholder="Customer name"></label>
         <label class="f">Phone<input class="inp" name="nc_phone" type="tel" placeholder="07XX XXX XXX"></label>
         <label class="f">WhatsApp number <span class="muted small">(if different)</span><input class="inp" name="nc_wa" type="tel" placeholder="Leave empty if same as phone"></label>
-        <label class="f full">Location<input class="inp" name="nc_location" placeholder="e.g. Eastleigh, 1st Avenue"></label>
+        <label class="f">Location<input class="inp" name="nc_location" placeholder="e.g. Eastleigh, 1st Avenue"></label>
+        <label class="f">Message language<select class="inp" name="nc_lang">${[["","English + Somali"],["so","Somali only"],["en","English only"]].map(([v,l])=>`<option value="${v}" ${(""||"")===v?"selected":""}>${l}</option>`).join("")}</select></label>
       </div>
     </div>
     <div class="sec-t">Service</div>
@@ -1474,7 +1484,7 @@ function saveOrder(){
     const dup = phone && S.customers.find(x=>waPhone(x.phone)===waPhone(phone));
     if(dup) cust = dup;
     else { let whatsapp = fm.nc_wa.value.trim(); if(whatsapp && waPhone(whatsapp)===waPhone(phone)) whatsapp = "";
-      cust = {id:uid(), code:nextCustCode(), name, phone, whatsapp, location:fm.nc_location.value.trim(), createdAt:Date.now()}; store.put("customers", cust); }
+      cust = {id:uid(), code:nextCustCode(), name, phone, whatsapp, location:fm.nc_location.value.trim(), lang:(fm.nc_lang&&fm.nc_lang.value)||"", createdAt:Date.now()}; store.put("customers", cust); }
   }
   const items = draft.items.filter(i => i.kind==="carpet" ? (i.ctype==="corridor" ? num(i.metres)>0 : i.ctype==="custom" ? (num(i.length)>0 && num(i.width)>0) : true) : num(i.qty)>0);
   if(!items.length){ showToast(draft.service==="carpet"?"Tap a carpet size to add at least one carpet":draft.service==="mixed"?"Add at least one garment or carpet":"Add at least one item"); return; }
@@ -1571,10 +1581,24 @@ const STAGE_TEXT = {
   Collected: o => `thank you for collecting your order ${o.no}. ${balanceOf(o)>0?"Remaining balance: "+money(balanceOf(o))+".":"Fully paid."} We hope to serve you again!`,
   Delivered: o => `your order ${o.no} has been delivered. ${balanceOf(o)>0?"Remaining balance: "+money(balanceOf(o))+".":"Fully paid."} Thank you for choosing us!`
 };
+const STAGE_TEXT_SO = {
+  Received: o => `waxaan helnay ${svcWordsSo(o)} (${itemCount(o)} shay). Dalabka ${o.no}. Wadarta ${money(orderTotal(o))}, la bixiyay ${money(paidOf(o))}, haraaga ${money(balanceOf(o))}. Waxa la filayaa inuu diyaar noqdo: ${fmtDate(o.expected)}.`,
+  Cleaning: o => `${svcWordsSo(o)} (dalabka ${o.no}) hadda waa la nadiifinayaa.`,
+  Ironing: o => `dharkaaga (dalabka ${o.no}) waa la dhaqay, hadda waa la kaawiyadeynayaa oo la diyaarinayaa.${o.service==="mixed"?" Roogaggaaga waa la dhaqay, hadda way qallalayaan.":""}`,
+  Drying: o => `roogaggaaga (dalabka ${o.no}) waa la dhaqay, hadda way qallalayaan.`,
+  Ready: o => `${svcWordsSo(o)} waa DIYAAR (dalabka ${o.no}). ${o.delivery&&o.delivery.required?"Dhowaan ayaan kuu keeni doonnaa "+(o.delivery.location||"")+".":"Waxaad ka qaadan kartaa dukaankayaga."} Lacagta harsan: ${money(balanceOf(o))}.`,
+  Collected: o => `waad ku mahadsan tahay inaad qaadatay dalabka ${o.no}. ${fullyPaidSo(o)} Waxaan rajeyneynaa inaan mar kale kuu adeegno!`,
+  Delivered: o => `dalabkaaga ${o.no} waa laguu keenay. ${fullyPaidSo(o)} Waad ku mahadsan tahay inaad na doorato!`
+};
 function stageMsg(o, kind, amount){
   const st = S.settings; const sign = `\n\n— ${st.businessName}${st.phone?" · "+st.phone:""}`;
-  if(kind==="payment") return `Hello ${o.customerName}, we have received your payment of ${money(amount)} for order ${o.no}. Total ${money(orderTotal(o))}, paid ${money(paidOf(o))}, balance ${money(balanceOf(o))}.${sign}`;
-  const f = STAGE_TEXT[kind]; return `Hello ${o.customerName}, ${f?f(o):"your order "+o.no+" is now "+kind+"."}${sign}`;
+  if(kind==="payment") return bi(o,
+    `Hello ${o.customerName}, we have received your payment of ${money(amount)} for order ${o.no}. Total ${money(orderTotal(o))}, paid ${money(paidOf(o))}, balance ${money(balanceOf(o))}.`,
+    `Asalaamu calaykum ${o.customerName}, waxaan helnay lacagtaada ${money(amount)} ee dalabka ${o.no}. Wadarta ${money(orderTotal(o))}, la bixiyay ${money(paidOf(o))}, haraaga ${money(balanceOf(o))}.`) + sign;
+  const f = STAGE_TEXT[kind], g = STAGE_TEXT_SO[kind];
+  return bi(o,
+    `Hello ${o.customerName}, ${f?f(o):"your order "+o.no+" is now "+kind+"."}`,
+    `Asalaamu calaykum ${o.customerName}, ${g?g(o):"dalabkaaga "+o.no+" hadda waa: "+kind+"."}`) + sign;
 }
 // WhatsApp goes to the customer's WhatsApp number if one is saved, otherwise their phone
 function waNum(o){ const c = o && o.customerId ? custById(o.customerId) : null; return (c && (c.whatsapp||"").trim()) || (o && o.customerWa) || (o && o.customerPhone) || ""; }
@@ -1857,7 +1881,10 @@ async function invoicePdf(o, forSend=false){
 /* ---- send the receipt / invoice PDF to the customer ---- */
 function sendMsg(o, kind){
   const st=S.settings;
-  return `Hello ${o.customerName}, here is your ${kind} for order ${o.no} from ${st.businessName||"SUFAAT Drycleaners"}. Total ${money(orderTotal(o))}, paid ${money(paidOf(o))}, balance ${money(balanceOf(o))}. Thank you!${st.phone?" Tel "+st.phone:""}`;
+  const kindSo = kind==="receipt" ? "rasiidka" : "biilka (invoice-ka)";
+  return bi(o,
+    `Hello ${o.customerName}, here is your ${kind} for order ${o.no} from ${st.businessName||"SUFAAT Drycleaners"}. Total ${money(orderTotal(o))}, paid ${money(paidOf(o))}, balance ${money(balanceOf(o))}. Thank you!${st.phone?" Tel "+st.phone:""}`,
+    `Asalaamu calaykum ${o.customerName}, halkan waa ${kindSo} dalabka ${o.no} ee ${st.businessName||"SUFAAT Drycleaners"}. Wadarta ${money(orderTotal(o))}, la bixiyay ${money(paidOf(o))}, haraaga ${money(balanceOf(o))}. Mahadsanid!${st.phone?" Tel "+st.phone:""}`);
 }
 async function sendInvoice(o){
   const r = await invoicePdf(o, true);
