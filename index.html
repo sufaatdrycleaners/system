@@ -467,7 +467,8 @@ const DEFAULT_SETTINGS = {
   clothPrices: [
     {name:"Shirt",price:100},{name:"Trouser",price:100},{name:"Suit (2pc)",price:400},
     {name:"Dress",price:200},{name:"Abaya",price:250},{name:"Jacket",price:250},
-    {name:"Bedsheet",price:150},{name:"Duvet",price:500},{name:"Curtain",price:300},{name:"Other",price:0}
+    {name:"Bedsheet",price:150},{name:"Duvet 4×6",price:400},{name:"Duvet 5×6",price:400},{name:"Duvet 6×6",price:500},{name:"Children duvet",price:300},
+    {name:"Curtain",price:300},{name:"Other",price:0}
   ],
   drivers: [],
   theme: {g1:"#21473c", g2:"#3f8a6e"},
@@ -2348,6 +2349,7 @@ function subscribeData(){
     if(snap.exists){ S.settings = {...structuredClone(DEFAULT_SETTINGS), ...structuredClone(snap.data())}; }
     if(S.role==="admin" && !snap.metadata.fromCache && !S._pubSynced){ S._pubSynced = true; DB.doc("public/site").set(publicSite(S.settings)).catch(e=>console.warn("public sync", e)); }
     if(!snap.metadata.fromCache || snap.exists){ S.loaded.settings=true; done(); }
+    if(snap.exists && S.role==="admin" && !S.readOnly && !snap.metadata.fromCache && S.mode==="db") seedPrices();
     render();
   }, onErr("settings")));
   render();
@@ -2355,6 +2357,24 @@ function subscribeData(){
 function renderLoading(){ $("#root").innerHTML = `<div class="loading"><div><div class="spin"></div>Signing you in…</div></div>`; }
 
 /* ---- public price list for the website (no private data) ---- */
+// one-off price-list updates, applied once when an admin is signed in
+const PRICE_SEEDS = {
+  "duvet-sizes-2026-11": [{name:"Duvet 4×6",price:400},{name:"Duvet 5×6",price:400},{name:"Duvet 6×6",price:500},{name:"Children duvet",price:300}]
+};
+function seedPrices(){
+  const st = S.settings, done = st.seeded||[]; const todo = Object.keys(PRICE_SEEDS).filter(k=>!done.includes(k));
+  if(!todo.length || S._seeding || S.mode!=="db") return; S._seeding = true;
+  let list = [...(st.clothPrices||[])];
+  todo.forEach(k=>{
+    const add = PRICE_SEEDS[k].filter(x=>!list.some(p=>p.name.trim().toLowerCase()===x.name.toLowerCase()));
+    // the sized duvets replace the old single "Duvet" price
+    const at = list.findIndex(p=>p.name.trim().toLowerCase()==="duvet");
+    if(k.startsWith("duvet") && at>=0) list.splice(at, 1, ...add);
+    else { const other = list.findIndex(p=>p.name.trim().toLowerCase()==="other"); if(other>=0) list.splice(other, 0, ...add); else list.push(...add); }
+  });
+  store.saveSettings({...st, clothPrices:list, seeded:[...done, ...todo]});
+  setTimeout(()=>{ S._seeding = false; }, 3000);
+}
 function publicSite(st){
   return JSON.parse(JSON.stringify({
     businessName: st.businessName||"", phone: st.phone||"", address: st.address||"", postal: st.postal||"",
