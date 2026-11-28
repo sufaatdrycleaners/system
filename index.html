@@ -2199,7 +2199,12 @@ let AUTH = null, UNSUBS = [];
 const LOGIN = { tab:"staff", error:"", info:"", busy:false };
 const isAdmin = () => S.role==="admin";
 const isOwnerUser = () => !!(S.user && ADMIN_EMAILS.includes((S.user.email||"").toLowerCase()));
-function allowedViews(){ if(S.role==="admin") return NAV.map(n=>n[0]).filter(v=>v!=="live" || isOwnerUser()); return ROLE_VIEWS[S.role] || []; }
+// desktop computer = no touch screen (the shop PCs). Finance is hidden there, even for the admin.
+const IS_DESKTOP = (()=>{ try{ return !(navigator.maxTouchPoints>0) && !matchMedia("(pointer:coarse)").matches; }catch(_){ return false; } })();
+const DESKTOP_HIDDEN = ["finance"];
+function allowedViews(){
+  if(S.role==="admin") return NAV.map(n=>n[0]).filter(v=>(v!=="live" || isOwnerUser()) && !(IS_DESKTOP && DESKTOP_HIDDEN.includes(v)));
+  return ROLE_VIEWS[S.role] || []; }
 function viewAllowed(v){ return allowedViews().includes(v); }
 
 function startApp(){
@@ -2614,7 +2619,7 @@ document.addEventListener("click", async e => {
       if(k==="invoice"){ const o=orderById(id); if(o) await invoicePdf(o); }
       else if(k==="send"){ const o=orderById(id); if(o) await sendInvoice(o); }
       else if(k==="statement"){ const c=custById(id); if(c) await statementPdf(c); }
-      else if(k==="balances") await balancesPdf(); else if(k==="finance") await financePdf(); else if(k==="report") await reportPdf();
+      else if(k==="balances") await balancesPdf(); else if(k==="finance"){ if(!(IS_DESKTOP)) await financePdf(); } else if(k==="report") await reportPdf();
     }catch(err){ console.error(err); showToast("Couldn't build the PDF"); } finally { pdfB.disabled=false; } return; }
   const was = t.closest("[data-wasent]");
   if(was){ const [oid,at] = was.dataset.wasent.split("|"); markWaSent(oid, at); if(was.closest("#modal2")) setTimeout(()=>closeModal("#modal2"),300); return; }
