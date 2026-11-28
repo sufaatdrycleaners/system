@@ -448,7 +448,6 @@ const DEFAULT_SETTINGS = {
   stampTop: "SUFAAT LAUNDRY",
   stampBottom: "P.O. BOX 2613 - 00610, EASTLEIGH, NAIROBI",
   notifyEveryStep: true,
-  adminOnComputers: false,
   carpetRate: 150,
   corridorRate: 100,
   expressMult: 2,
@@ -1077,7 +1076,6 @@ VIEWS.settings = () => {
       </div></div>
       <div class="hint" style="margin-top:8px">The date in the middle fills in automatically. The logo and stamp go on every invoice, receipt, statement and balance sheet PDF.</div>
       <label style="display:flex;gap:8px;align-items:center;font-weight:600;margin-top:12px"><input type="checkbox" name="notifyEveryStep" ${st.notifyEveryStep?"checked":""} ${ro}> Prompt to WhatsApp the customer at every order step</label>
-      <label style="display:flex;gap:8px;align-items:flex-start;font-weight:600;margin-top:12px"><input type="checkbox" name="adminOnComputers" ${st.adminOnComputers?"checked":""} ${ro} style="margin-top:3px"> <span>Allow admin sign-in on desktop computers<br><span class="hint" style="font-weight:400">Off: shop computers show the Staff sign-in only, and admin accounts can sign in only from an iPad, tablet or phone.</span></span></label>
     </div></div>
     <div class="card"><div class="card-h"><h2>Theme colour</h2><div class="sp"></div><span class="hint">Pick a gradient</span></div>
       <div class="card-b">
@@ -2178,8 +2176,6 @@ const ROLE_VIEWS = {
 };
 let AUTH = null, UNSUBS = [];
 const LOGIN = { tab:"staff", error:"", info:"", busy:false };
-// desktop computer = no touch screen (shop PCs). These show the Staff sign-in only.
-const IS_DESKTOP = (()=>{ try{ return !(navigator.maxTouchPoints>0) && !matchMedia("(pointer:coarse)").matches; }catch(_){ return false; } })();
 const isAdmin = () => S.role==="admin";
 const isOwnerUser = () => !!(S.user && ADMIN_EMAILS.includes((S.user.email||"").toLowerCase()));
 function allowedViews(){ if(S.role==="admin") return NAV.map(n=>n[0]).filter(v=>v!=="live" || isOwnerUser()); return ROLE_VIEWS[S.role] || []; }
@@ -2292,11 +2288,6 @@ async function onAuth(u){
   }
   S.role = ADMIN_EMAILS.includes(email) ? "admin" : (p.role||"staff");
   if(!ROLES[S.role]){ S.role=null; LOGIN.error = "This account type is no longer used. Ask the admin to set it to Staff."; await AUTH.signOut(); return; }
-  if(S.role==="admin" && IS_DESKTOP){
-    let allow = false;
-    try{ const sn = await DB.doc("config/settings").get(); allow = !!(sn.exists && sn.data().adminOnComputers); }catch(_){}
-    if(!allow){ S.role=null; LOGIN.email=""; LOGIN.info=""; LOGIN.error = "Admin sign-in isn't allowed on desktop computers. Sign in as admin from the iPad or a phone. Staff can sign in here."; await AUTH.signOut(); return; }
-  }
   S.profile = {...p, uid:u.uid, email};
   document.body.className = "role-"+S.role;
   if(!viewAllowed(S.view)) S.view = allowedViews()[0];
@@ -2383,8 +2374,8 @@ function renderLogin(){
       </form>` : `      <form class="lg-card" id="login-form" novalidate>
         <div class="lg-head"><img src="${LOGO_LIGHT}" alt=""><span>SUFAAT Staff Portal</span></div>
         <h1>Sign in</h1>
-        <p class="lg-p">${IS_DESKTOP?"Staff: enter your email and password.":"Choose who you are, then enter your details."}</p>
-        ${IS_DESKTOP ? `<div class="lg-tabs"><button type="button" class="on" style="cursor:default">Staff sign-in</button></div>` : `<div class="lg-tabs">${Object.entries(ROLES).map(([k,l])=>`<button type="button" class="${t===k?"on":""}" data-ltab="${k}">${l}</button>`).join("")}</div>`}
+        <p class="lg-p">Choose who you are, then enter your details.</p>
+        <div class="lg-tabs">${Object.entries(ROLES).map(([k,l])=>`<button type="button" class="${t===k?"on":""}" data-ltab="${k}">${l}</button>`).join("")}</div>
         <label class="lg-l">Email<input class="lg-i" type="text" inputmode="email" name="lg_who" autocomplete="off" autocorrect="off" autocapitalize="none" spellcheck="false" data-lpignore="true" data-1p-ignore data-form-type="other" placeholder="example@mail.com" value="${esc(LOGIN.email||"")}" required></label>
         <div class="lg-row"><span>Password</span><a href="javascript:void 0" data-act="forgot">Forgot password?</a></div>
         <div class="lg-pw"><input class="lg-i lg-mask" type="${MASK_OK?"text":"password"}" name="lg_key" autocomplete="off" autocorrect="off" autocapitalize="none" spellcheck="false" data-lpignore="true" data-1p-ignore data-form-type="other" placeholder="••••••••" required><button type="button" class="lg-eye" data-act="eye" aria-label="Show password">${ic("eye",20)}</button></div>
@@ -2590,7 +2581,7 @@ document.addEventListener("click", async e => {
       const sizes = rowsOf("size-rows").map(([size,price])=>({size:size.replace(/\s*[x*X]\s*/,"×"),price})), svcs = rowsOf("svc-rows").map(([name,price])=>({name,price}));
       const prices = $$("#price-rows .pr").map(r=>({name:$("[data-pn]",r).value.trim(), price:num($("[data-pp]",r).value)})).filter(p=>p.name);
       S.settingsDirty = false; const theme = themeOf(); S.themePreview = null;
-      store.saveSettings({...S.settings, theme, brandV:3, postal:g("postal").trim(), stampTop:g("stampTop").trim(), stampBottom:g("stampBottom").trim(), adminOnComputers:!!($("[name=adminOnComputers]")&&$("[name=adminOnComputers]").checked), notifyEveryStep:$("[name=notifyEveryStep]",f).checked,
+      store.saveSettings({...S.settings, theme, brandV:3, postal:g("postal").trim(), stampTop:g("stampTop").trim(), stampBottom:g("stampBottom").trim(), notifyEveryStep:$("[name=notifyEveryStep]",f).checked,
         corridorRate:num(g("corridorRate")), expressMult:num(g("expressMult"))||2, customRate:num(g("customRate")), carpetSizes:sizes.length?sizes:DEFAULT_SETTINGS.carpetSizes, extraServices:svcs, businessName:g("businessName").trim()||"Cleaning", phone:g("phone").trim(), address:g("address").trim(),
         defaultDeliveryFee:num(g("defaultDeliveryFee")), clothDays:num(g("clothDays")), carpetDays:num(g("carpetDays")),
         drivers:lines("drivers"), expenseCategories:lines("expenseCategories").length?lines("expenseCategories"):DEFAULT_SETTINGS.expenseCategories, clothPrices:prices.length?prices:DEFAULT_SETTINGS.clothPrices});
