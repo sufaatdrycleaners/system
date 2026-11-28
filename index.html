@@ -777,7 +777,7 @@ VIEWS.dashboard = () => {
     <img class="hero-logo" src="${LOGO_LIGHT}" alt="${esc(S.settings.businessName)}">
     <div class="hero-txt"><div class="hero-ar" dir="rtl" lang="ar">السَّلَامُ عَلَيْكُمْ وَرَحْمَةُ اللهِ وَبَرَكَاتُهُ</div><h1 class="hero-hi">Assalāmu ʿalaykum${who?`, <span>${esc(who)}</span>`:""}</h1>
       <div class="hero-when"><span class="hero-clock" id="hero-clock">${clockStr()}</span><span class="hero-day" id="hero-day">${dayStr()}</span></div>${S.settings.phone||S.settings.address?`<div class="hero-c">${S.settings.phone?`☎ ${esc(S.settings.phone)}`:""}${S.settings.phone&&S.settings.address?" &nbsp;·&nbsp; ":""}${S.settings.address?`📍 ${esc(S.settings.address)}`:""}</div>`:""}
-      <div class="hero-stats"><span><b>${pending.length}</b> in process</span><span><b>${ready.length}</b> ready</span><span><b>${money(todaySales)}</b> today</span></div></div>
+      <div class="hero-stats"><span><b>${pending.length}</b> in process</span><span><b>${ready.length}</b> ready</span>${IS_DESKTOP?"":`<span><b>${money(todaySales)}</b> today</span>`}</div></div>
     <div class="hero-act">${S.readOnly?"":`<button class="btn hero-btn" data-act="new-order">${ic("plus")} New order</button>`}${bellHtml()}</div>
     <svg class="hero-bub" viewBox="0 0 200 200" aria-hidden="true"><g fill="none" stroke="currentColor" stroke-width="3"><circle cx="60" cy="120" r="44"/><circle cx="130" cy="60" r="26"/><circle cx="150" cy="140" r="32"/><circle cx="175" cy="95" r="14"/></g></svg>
   </div>` +
@@ -786,8 +786,8 @@ VIEWS.dashboard = () => {
     ${k("Pending", pending.length, late.length?`<span class="late">${late.length} overdue</span>`:"In cleaning", "#a76400", "orders:pending")}
     ${k("Ready", ready.length, "Awaiting collection / delivery", "var(--g1)", "orders:ready")}
     ${k("Delivered / collected", delivered.length, "Completed", "#1d7f4e", "orders:done")}
-    ${k("Today's sales", money(todaySales), "Payments received today", "", "payments")}
-    ${k("Outstanding payments", money(outstanding), `${owing} order${owing===1?"":"s"} with a balance`, "#b4322d", "payments")}
+    ${IS_DESKTOP ? "" : k("Today's sales", money(todaySales), "Payments received today", "", "payments")}
+    ${IS_DESKTOP ? "" : k("Outstanding payments", money(outstanding), `${owing} order${owing===1?"":"s"} with a balance`, "#b4322d", "payments")}
   </div>
   <div class="two">
     <div class="card"><div class="card-h"><h2>Recent orders</h2><div class="sp"></div><a class="btn sm" href="#orders">View all</a></div>
